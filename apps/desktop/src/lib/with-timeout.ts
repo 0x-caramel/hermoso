@@ -51,6 +51,70 @@ export function isTimeoutError(error: unknown): error is TimeoutError {
   return error instanceof TimeoutError
 }
 
+/** `withTimeout`, except that the budget renews while `keepWaiting()` says the wait is a legitimately
+ * long one. Fork addition: a first-run install of Hermes takes minutes by design and is a wait on a
+ * person and the network, not a backend that "is not coming". When the budget runs out and
+ * `keepWaiting()` answers false (or fails), it rejects exactly like `withTimeout`. */
+export function withTimeoutWhile<T>(
+  promise: Promise<T>,
+  ms: number,
+  message: string,
+  keepWaiting: () => Promise<boolean>,
+  onTimeout?: (error: TimeoutError) => void
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const arm = () => {
+      timer = setTimeout(() => {
+        void keepWaiting()
+          .catch(() => false)
+          .then(again => {
+            if (settled) {
+              return
+            }
+
+            if (again) {
+              arm()
+
+              return
+            }
+
+            settled = true
+
+            const error = new TimeoutError(message)
+
+            try {
+              onTimeout?.(error)
+            } catch (onTimeoutError) {
+              reject(onTimeoutError)
+
+              return
+            }
+
+            reject(error)
+          })
+      }, ms)
+    }
+
+    arm()
+
+    Promise.resolve(promise).then(
+      value => {
+        settled = true
+        clearTimeout(timer)
+        resolve(value)
+      },
+      err => {
+        settled = true
+        clearTimeout(timer)
+        reject(err)
+      }
+    )
+  })
+}
+
 /** Settle with `promise`, or reject with a TimeoutError after `ms`.
  * `onTimeout` runs synchronously before the rejection is published so callers
  * can revoke ownership of work that would otherwise keep running unowned. If

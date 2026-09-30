@@ -1,0 +1,11 @@
+{
+  "_": "Derived files that fork/sync.mjs regenerates after every replay instead of merging. Each step names a command of the repo and the paths it writes (relative to the repo root). The result is committed as \"generated: <name>\"; keep those commits on top of the fork stack.",
+  "steps": [
+    {
+      "name": "i18n key catalog",
+      "run": ["npm", "run", "i18n:keys"],
+      "cwd": "apps/desktop",
+      "paths": ["locales/_keys.desktop.json"]
+    }
+  ]
+}

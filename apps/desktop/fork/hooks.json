@@ -1,0 +1,105 @@
+{
+  "_": "Where this fork hooks into upstream-owned files. fork/sync.mjs checks these after every replay: a merge can be textually clean and still lose a hook (upstream moved or rewrote the code around it). `min` is how many times the literal text must appear. When a port moves a hook, update the entry.",
+  "electron/main.ts": [
+    {
+      "text": "await vpn.assertReady()",
+      "min": 3,
+      "why": "the gate holds every backend start and dial: runHermesStart, runPoolBackendStart and connectRegistryBackend (SSH / remote connections)"
+    },
+    {
+      "text": "egressGate.attach(",
+      "min": 1,
+      "why": "every outbound request of Electron's network stack is held until the tunnel is up"
+    },
+    {
+      "text": "'session-created'",
+      "min": 1,
+      "why": "sessions created later (link titles, webviews) get the egress gate too"
+    },
+    {
+      "text": "await waitForStartupGate()",
+      "min": 1,
+      "why": "the update check (git / Python / feed fetches the egress gate can not see) waits for the tunnel; it lives in checkUpdates()"
+    },
+    {
+      "text": "vpn.ensure()",
+      "min": 1,
+      "why": "the tunnel is brought up as early as possible"
+    },
+    {
+      "text": "vpn.dispose()",
+      "min": 1,
+      "why": "the monitor is stopped on quit"
+    },
+    {
+      "text": "forkUpdate.takeOverIfStale()",
+      "min": 1,
+      "why": "at startup, an old fork bundle on a newer official runtime hands over to fork/update.mjs and boots nothing (electron/fork-update.ts)"
+    },
+    {
+      "text": "forkUpdate.announceLastResult()",
+      "min": 1,
+      "why": "a failed or postponed fork update is told to the user once"
+    },
+    {
+      "text": "forkUpdate.updateMechanism()",
+      "min": 1,
+      "why": "a build outside a fork checkout (an installer given to someone) has no 'Update now': the official update would leave it stale; it answers 'external'"
+    },
+    {
+      "text": "createForkUpdate(",
+      "min": 1,
+      "why": "the self-update shell is wired to the real app, git, the update marker and the VPN"
+    },
+    {
+      "text": "hermes:vpn:",
+      "min": 8,
+      "why": "the VPN IPC surface the renderer talks to"
+    },
+    {
+      "text": "com.nousresearch.hermes.mullvad",
+      "min": 1,
+      "why": "own AppUserModelID: own taskbar button and icon next to the official Hermes"
+    }
+  ],
+  "electron/preload.ts": [
+    {
+      "text": "hermes:vpn:",
+      "min": 8,
+      "why": "the renderer bridge for the VPN IPC surface"
+    }
+  ],
+  "src/app/gateway/hooks/use-gateway-boot.ts": [
+    {
+      "text": "awaitVpnGate",
+      "min": 2,
+      "why": "the renderer's boot waits for main's gate instead of racing it"
+    },
+    {
+      "text": "withTimeoutWhile(",
+      "min": 1,
+      "why": "the renderer's boot budget renews while a first-run install is in progress, so a healthy install is not shown as \"Hermes couldn't start\" after 3 minutes (src/lib/with-timeout.ts)"
+    }
+  ],
+  "src/app/contrib/wiring.tsx": [
+    {
+      "text": "VpnGateOverlay",
+      "min": 2,
+      "why": "the boot card that explains what the gate is waiting for"
+    }
+  ],
+  "src/app/settings/index.tsx": [
+    {
+      "text": "VpnSettings",
+      "min": 1,
+      "why": "Settings -> VPN"
+    }
+  ],
+  "src/app/shell/hooks/use-statusbar-items.tsx": [
+    {
+      "text": "'vpn'",
+      "min": 1,
+      "why": "the statusbar chip"
+    }
+  ]
+}

@@ -259,6 +259,7 @@ import {
   stopFind
 } from './find-in-page'
 import { createFirstRunSetupGate } from './first-run-setup-gate'
+import { createForkUpdate } from './fork-update'
 import { registerFsIpc } from './fs-ipc'
 import type {
   GatewayFileSaveContext,
@@ -1652,8 +1653,12 @@ Menu.setApplicationMenu(null)
 // keep this string in sync with package.json `build.appId`. macOS/Linux don't
 // need this, so gate it on Windows. (Fixes: desktop approval/turn notifications
 // never firing on Windows.)
+//
+// Fork: its own id. Sharing the official app's id makes Windows fold this window into
+// the official Hermes' taskbar button and draw THAT shortcut's icon. The Start Menu
+// shortcut written by fork/install-shortcut.ps1 carries the same id.
 if (IS_WINDOWS) {
-  app.setAppUserModelId(IDENTITY_APP_NAME ? PRODUCT_IDENTITY.appId : 'com.nousresearch.hermes')
+  app.setAppUserModelId(IDENTITY_APP_NAME ? PRODUCT_IDENTITY.appId : 'com.nousresearch.hermes.mullvad')
 }
 
 // Seed the native About panel with the best-known Hermes version. This is
@@ -3619,7 +3624,7 @@ function resolvePackagedUpdateStrategy(): Promise<UpdaterStrategy | null> {
 async function createPackagedUpdateStrategy(): Promise<UpdaterStrategy | null> {
   const mechanism = resolveUpdaterMechanism({
     platform: process.platform,
-    updateMechanism: INSTALL_STAMP?.updateMechanism,
+    updateMechanism: forkUpdate.updateMechanism() ?? INSTALL_STAMP?.updateMechanism,
     source: INSTALL_STAMP?.source
   })
 
@@ -15341,6 +15346,31 @@ function waitForStartupGate() {
   return vpn.whenStartupReleased()
 }
 
+// After an official update this build is the OLD fork bundle on a NEW runtime. At startup it
+// hands over to fork/update.mjs (rebuild the fork on the new official code, then reopen);
+// inert unless packaged on Windows inside a fork checkout. See electron/fork-update.ts.
+const forkUpdate = createForkUpdate({
+  app,
+  BrowserWindow,
+  dialog,
+  env: process.env,
+  execPath: process.execPath,
+  gitBinary: resolveGitBinary,
+  hermesHome: HERMES_HOME,
+  isPackaged: IS_PACKAGED,
+  liveUpdate: () => readLiveUpdateMarker(HERMES_HOME),
+  log: rememberLog,
+  resolveRuntimeRoot: resolveUpdateRoot,
+  resourcesPath: process.resourcesPath,
+  startVpn: () => void vpn.ensure(),
+  userDataDir: app.getPath('userData'),
+  vpnRequired: () => {
+    const { block, enabled } = vpn.getState().settings
+
+    return enabled && block
+  }
+})
+
 function createWindow() {
   const icon = getAppIconPath()
   const savedWindowState = readWindowState()
@@ -19415,6 +19445,11 @@ app.on('open-url', (event, url) => {
 })
 
 app.whenReady().then(() => {
+  // Fork: if the official Hermes moved on under this build, update the fork first and boot nothing.
+  if (forkUpdate.takeOverIfStale()) {
+    return
+  }
+
   // Hold the app's own outbound traffic behind the VPN gate before anything can load
   // (idempotent with the `session-created` hook; covers a default session created earlier).
   egressGate.attach(session.defaultSession)
@@ -19441,6 +19476,7 @@ app.whenReady().then(() => {
   // integration is off.
   void vpn.ensure()
   vpn.startMonitor()
+  forkUpdate.announceLastResult()
 
   if (CRASH_DIAGNOSTICS) {
     startChromiumLogWatcher(CHROMIUM_LOG_PATH)
