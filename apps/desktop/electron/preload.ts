@@ -247,6 +247,26 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return () => ipcRenderer.removeListener('hermes:quick-entry:shown', listener)
     }
   },
+  // Mullvad VPN gate. Main owns the tunnel and the saved preference and answers
+  // every call with the resulting state, which it also pushes on onState — the
+  // renderer only paints it. `ensure` is Connect and Retry in one (single-flight).
+  vpn: {
+    getState: () => ipcRenderer.invoke('hermes:vpn:state:get'),
+    ensure: () => ipcRenderer.invoke('hermes:vpn:ensure'),
+    refresh: () => ipcRenderer.invoke('hermes:vpn:refresh'),
+    // "Continue without VPN": start this launch without the tunnel (never persisted).
+    waive: () => ipcRenderer.invoke('hermes:vpn:waive'),
+    setSettings: patch => ipcRenderer.invoke('hermes:vpn:settings:set', patch),
+    disconnect: () => ipcRenderer.invoke('hermes:vpn:disconnect'),
+    listRelays: () => ipcRenderer.invoke('hermes:vpn:relays:list'),
+    openApp: () => ipcRenderer.invoke('hermes:vpn:open-app'),
+    onState: callback => {
+      const listener = (_event, state) => callback(state)
+      ipcRenderer.on('hermes:vpn:state', listener)
+
+      return () => ipcRenderer.removeListener('hermes:vpn:state', listener)
+    }
+  },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),

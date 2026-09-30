@@ -266,6 +266,63 @@ export const ja = defineLocale({
     }
   },
 
+  vpn: {
+    gate: {
+      checkingTitle: 'VPN を確認しています',
+      connectingTitle: 'Mullvad に接続しています',
+      waitingDescription: 'トンネルが確立され次第、Hermes が起動します。',
+      blockedTitle: 'Hermes は VPN を待っています',
+      blockedDescription: 'Mullvad に接続するまで Hermes は起動を保留するため、保護されていない通信は行われません。',
+      reasons: {
+        'account-expired': 'Mullvad アカウントの残り時間がありません。',
+        'daemon-unreachable': 'Mullvad のバックグラウンドサービスが応答していません。',
+        'error-state': 'Mullvad がトンネルを確立できませんでした。',
+        failed: 'Hermes が Mullvad と通信できませんでした。',
+        'not-installed': 'このコンピューターに Mullvad VPN がインストールされていません。',
+        'not-logged-in': 'Mullvad がアカウントにサインインしていません。',
+        timeout: '接続の確立に時間がかかりすぎました。'
+      },
+      hints: {
+        'account-expired':
+          'mullvad.net または Mullvad アプリでアカウントに時間を追加してから、もう一度お試しください。',
+        'daemon-unreachable': 'Mullvad アプリを一度開くか再起動してから、もう一度お試しください。',
+        'error-state': 'Mullvad アプリを開いて表示内容を確認してから、もう一度お試しください。',
+        failed: 'Mullvad アプリが起動していることを確認してから、もう一度お試しください。',
+        'not-installed': 'Mullvad VPN アプリをインストールしてから、もう一度お試しください。',
+        'not-logged-in': 'Mullvad アプリを開いてアカウント番号でサインインしてから、もう一度お試しください。',
+        timeout: 'インターネット接続を確認してから、もう一度お試しください。'
+      },
+      retry: '再試行',
+      openMullvad: 'Mullvad を開く',
+      getMullvad: 'Mullvad を入手',
+      continueWithout: 'VPN なしで続行',
+      continueWithoutHint:
+        'Hermes は今回に限り VPN なしで起動します。VPN を必須にしないようにするには、設定 → VPN の「VPN が確立するまで起動を待つ」をオフにしてください。',
+      details: '詳細'
+    },
+    status: {
+      connected: '接続済み',
+      connecting: '接続中',
+      disconnected: '切断',
+      disconnecting: '切断中',
+      blocked: 'ブロック中',
+      unknown: '不明',
+      checking: '確認中',
+      notInstalled: '未インストール',
+      off: 'オフ',
+      via: place => `${place} 経由`
+    },
+    dropped: {
+      title: 'VPN が切断されました',
+      message: 'Hermes の通信は Mullvad を経由していません。',
+      reconnect: '再接続'
+    },
+    statusbar: {
+      toggle: 'VPN',
+      title: state => `Mullvad VPN: ${state}`
+    }
+  },
+
   notifications: {
     sharedProfileWarning:
       '別の Hermes インストールがこのプロファイルを使用しています。両方が設定とデータを共有しているため、変更が競合する可能性があります。このまま続けるか、変更する前にもう一方を終了してください。',
@@ -540,7 +597,8 @@ export const ja = defineLocale({
       about: '情報',
       billing: '請求',
       notifications: '通知',
-      vault: 'パスワードとログイン'
+      vault: 'パスワードとログイン',
+      vpn: 'VPN'
     },
     vault: {
       title: 'パスワードとログイン',
@@ -663,6 +721,31 @@ export const ja = defineLocale({
       completionSoundTitle: '完了サウンド',
       completionSoundDesc: 'エージェントのターン終了時に再生されます。プリセットを選んでここで試聴できます。',
       completionSoundPreview: '試聴'
+    },
+    vpn: {
+      title: 'VPN',
+      intro:
+        'Hermes は Mullvad VPN への接続を代行し、トンネルが確立するまで起動を保留できます。このコンピューターにインストールされた Mullvad アプリを操作し、アカウントは Mullvad 側に残ります。デバイスごとの設定です。',
+      enabledTitle: 'Mullvad VPN を使用',
+      enabledDesc: 'Hermes の起動のたびに Mullvad に接続します。',
+      blockTitle: 'VPN が確立するまで起動を待つ',
+      blockDesc: 'トンネルが確立するまで Hermes は起動しません。オフにするとバックグラウンドで接続します。',
+      statusTitle: 'ステータス',
+      statusDesc: 'このコンピューター上の Mullvad トンネルの現在の状態です。',
+      connect: '接続',
+      disconnect: '切断',
+      openApp: 'Mullvad を開く',
+      getApp: 'Mullvad を入手',
+      locationTitle: '接続先',
+      locationDesc:
+        'ここで選んだ接続先に接続します。「Mullvad の現在の接続先」のままにすると、Mullvad アプリで選択中の接続先が使われます。',
+      locationKeep: 'Mullvad の現在の接続先',
+      countryLabel: '国',
+      cityLabel: '都市',
+      cityAny: 'すべての都市',
+      locationUnavailable: 'Mullvad がインストールされ実行中になるまで、接続先の一覧は利用できません。',
+      protectionHint:
+        'Hermes が待機するのは起動時のみです。後でトンネルが切れたときに通信をブロックするには、Mullvad アプリで「常に VPN を要求」をオンにしてください。'
     },
     sections: {
       model: 'モデル',

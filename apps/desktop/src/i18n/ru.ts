@@ -265,6 +265,62 @@ export const ru = defineLocale({
       identityProvider: 'вашему провайдеру аутентификации'
     }
   },
+  vpn: {
+    gate: {
+      checkingTitle: 'Проверяем VPN',
+      connectingTitle: 'Подключаемся к Mullvad',
+      waitingDescription: 'Hermes запустится, как только туннель будет установлен.',
+      blockedTitle: 'Hermes ждёт VPN',
+      blockedDescription: 'Hermes не запускается, пока Mullvad не подключён, чтобы ничего не уходило без защиты.',
+      reasons: {
+        'account-expired': 'На аккаунте Mullvad не осталось времени.',
+        'daemon-unreachable': 'Фоновая служба Mullvad не отвечает.',
+        'error-state': 'Mullvad не смог установить туннель.',
+        failed: 'Hermes не удалось связаться с Mullvad.',
+        'not-installed': 'Mullvad VPN не установлен на этом компьютере.',
+        'not-logged-in': 'В Mullvad не выполнен вход в аккаунт.',
+        timeout: 'Подключение заняло слишком много времени.'
+      },
+      hints: {
+        'account-expired': 'Пополните время аккаунта на mullvad.net или в приложении Mullvad и повторите попытку.',
+        'daemon-unreachable': 'Откройте приложение Mullvad один раз или перезапустите его и повторите попытку.',
+        'error-state': 'Откройте приложение Mullvad, посмотрите, что оно сообщает, и повторите попытку.',
+        failed: 'Убедитесь, что приложение Mullvad запущено, и повторите попытку.',
+        'not-installed': 'Установите приложение Mullvad VPN и повторите попытку.',
+        'not-logged-in': 'Откройте приложение Mullvad, войдите по номеру аккаунта и повторите попытку.',
+        timeout: 'Проверьте подключение к интернету и повторите попытку.'
+      },
+      retry: 'Повторить',
+      openMullvad: 'Открыть Mullvad',
+      getMullvad: 'Скачать Mullvad',
+      continueWithout: 'Продолжить без VPN',
+      continueWithoutHint:
+        'Hermes запустится без VPN только в этот раз. Чтобы не требовать VPN, выключите «Ждать VPN перед запуском» в «Настройки → VPN».',
+      details: 'Подробности'
+    },
+    status: {
+      connected: 'Подключено',
+      connecting: 'Подключение',
+      disconnected: 'Отключено',
+      disconnecting: 'Отключение',
+      blocked: 'Заблокировано',
+      unknown: 'Неизвестно',
+      checking: 'Проверка',
+      notInstalled: 'Не установлено',
+      off: 'Выкл.',
+      via: place => `через ${place}`
+    },
+    dropped: {
+      title: 'VPN отключён',
+      message: 'Трафик Hermes больше не идёт через Mullvad.',
+      reconnect: 'Подключить снова'
+    },
+    statusbar: {
+      toggle: 'VPN',
+      title: state => `Mullvad VPN: ${state}`
+    }
+  },
+
   notifications: {
     sharedProfileWarning:
       'Другая установка Hermes использует этот профиль. Обе установки используют общие настройки и данные, поэтому изменения могут конфликтовать. Можно продолжить работу или закрыть другую установку перед внесением изменений.',
@@ -589,7 +645,8 @@ export const ru = defineLocale({
       sessions: 'Сеансы',
       about: 'О программе',
       billing: 'Оплата',
-      notifications: 'Уведомления'
+      notifications: 'Уведомления',
+      vpn: 'VPN'
     },
     plugins: {
       title: 'Плагины приложения',
@@ -695,6 +752,31 @@ export const ru = defineLocale({
       completionSoundTitle: 'Звук завершения',
       completionSoundDesc: 'Воспроизводится, когда ход агента завершён. Выберите пресет и прослушайте здесь.',
       completionSoundPreview: 'Прослушать'
+    },
+    vpn: {
+      title: 'VPN',
+      intro:
+        'Hermes может подключаться к Mullvad VPN за вас и откладывать запуск, пока туннель не установлен. Он управляет приложением Mullvad, установленным на этом компьютере; ваш аккаунт остаётся в Mullvad. Настройка для каждого устройства.',
+      enabledTitle: 'Использовать Mullvad VPN',
+      enabledDesc: 'Подключаться к Mullvad при каждом запуске Hermes.',
+      blockTitle: 'Ждать VPN перед запуском',
+      blockDesc: 'Hermes не запустится, пока туннель не установлен. Выключите, чтобы подключаться в фоне.',
+      statusTitle: 'Состояние',
+      statusDesc: 'Текущее состояние туннеля Mullvad на этом компьютере.',
+      connect: 'Подключить',
+      disconnect: 'Отключить',
+      openApp: 'Открыть Mullvad',
+      getApp: 'Скачать Mullvad',
+      locationTitle: 'Расположение',
+      locationDesc:
+        'Hermes подключается к выбранному здесь расположению. Оставьте «Текущее расположение Mullvad», чтобы использовать то, что выбрано в приложении Mullvad.',
+      locationKeep: 'Текущее расположение Mullvad',
+      countryLabel: 'Страна',
+      cityLabel: 'Город',
+      cityAny: 'Любой город',
+      locationUnavailable: 'Список расположений недоступен, пока Mullvad не установлен и не запущен.',
+      protectionHint:
+        'Hermes ждёт туннель только при запуске. Чтобы блокировать трафик при обрыве туннеля позже, включите «Всегда требовать VPN» в приложении Mullvad.'
     },
     sections: {
       model: 'Модель',

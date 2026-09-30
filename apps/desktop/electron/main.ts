@@ -238,6 +238,7 @@ import {
 } from './desktop-uninstall'
 import { describeDevCdpDecision, resolveDevCdpPort } from './dev-cdp'
 import { preReadyDockLaunchSteps } from './dock-launch-order'
+import { createEgressGate } from './egress-gate'
 import { installEmbedReferer } from './embed-referer'
 import { createAmbientClaimArbiter } from './event-dedupe'
 import { openExternalUrl as externalOpen, type ExternalOpenDeps, reportPreOpenStatFailure } from './external-open'
@@ -373,6 +374,7 @@ import { isMediaCapturePermission } from './media-capture-permission'
 import { createMediaProtocolHandler, MEDIA_PROTOCOL } from './media-protocol'
 import { fetchLocalMedia } from './media-range'
 import { createMinimizeToTray } from './minimize-to-tray'
+import { createMullvadClient } from './mullvad'
 import {
   createNativeAccessTokenCoordinator,
   type NativeAccessTokenOptions,
@@ -603,6 +605,7 @@ import { startRelaunchWaiter } from './updater/relaunch-waiter'
 import { preflightStateDb } from './updater/state-db-preflight'
 import { createStoreStrategy } from './updater/store-client'
 import { isExternalVenvHolder, isHermesOwnedVenvDaemon } from './venv-holder-select'
+import { createVpnController, isVpnGateError, sanitizeVpnSettings } from './vpn-controller'
 import { fetchMarketplaceThemes, searchMarketplaceThemes } from './vscode-marketplace'
 import { createWakeIndicatorWindowController } from './wake-indicator-window'
 import { decodeWebText } from './web-text-decoder'
@@ -3567,6 +3570,11 @@ function emitUpdateProgress(payload) {
 }
 
 async function checkUpdates(opts: { force?: boolean } = {}): Promise<UpdaterStatusWire> {
+  // Every update mechanism reaches the network through git, Python or a feed fetch, which the
+  // egress gate cannot see. Hold the check until the Mullvad tunnel is up (immediate when the
+  // gate is off or already released).
+  await waitForStartupGate()
+
   // A packaged install delegates to the update owner named by its stamp.
   let strategy: UpdaterStrategy | null = null
 
@@ -5900,8 +5908,10 @@ function getLinkTitleSession() {
   }
 
   linkTitleSession = session.fromPartition('hermes:link-titles', { cache: false })
-  linkTitleSession.webRequest.onBeforeRequest((details, callback) => {
-    callback({ cancel: RENDER_TITLE_BLOCKED_RESOURCES.has(details.resourceType) })
+  // Through the egress gate, not `webRequest.onBeforeRequest` directly: a session has one
+  // listener, and this one must keep running behind the VPN gate rather than replace it.
+  egressGate.attach(linkTitleSession, (details, callback) => {
+    callback({ cancel: RENDER_TITLE_BLOCKED_RESOURCES.has(details.resourceType ?? '') })
   })
   guardLinkTitleSession(linkTitleSession)
 
@@ -11594,6 +11604,10 @@ async function connectRegistryBackend(
   managedUpdateCorrelation = '',
   tokenPersistenceSource = ''
 ) {
+  // An SSH or remote connection is outbound traffic of this process. It waits for the
+  // Mullvad tunnel exactly like a local start does (runHermesStart, runPoolBackendStart).
+  await vpn.assertReady()
+
   const profileKey = String(profile ?? '').trim() || 'default'
 
   if (source.kind === 'ssh') {
@@ -12355,6 +12369,10 @@ async function runPoolBackendStart(
   opts: PoolBackendStartOptions = {}
 ): Promise<PoolBackendConnection> {
   const poolKey = opts.poolKey || profile
+
+  // Same Mullvad gate as the primary boot: a pooled profile backend must not
+  // start talking to the network outside the tunnel either.
+  await vpn.assertReady()
 
   await reapOrphanedBackendsOnce()
   profileDeletionGate.assertCanStart(profile)
@@ -13227,6 +13245,13 @@ async function runHermesStart({ supervisorRecovery = false }: { supervisorRecove
   if (existingConnectionPromise) {
     return existingConnectionPromise
   }
+
+  // Mullvad gate: no backend is resolved, spawned or dialed (local OR remote)
+  // until the tunnel is up. Deliberately BEFORE startAttempt() and the
+  // IIFE's failure latch below: a VPN that is not up yet is transient and
+  // fixable in seconds, so it must never latch like a broken local install.
+  // A no-op when the integration is off or non-blocking.
+  await vpn.assertReady()
 
   // Seed active-profile.json from legacy signals BEFORE the first
   // profile-dependent read (`primaryBackendIsRemote()` on the next line, then
@@ -15233,6 +15258,89 @@ function closeQuickEntryWindow() {
   quickEntryWindow = null
 }
 
+// ── Mullvad VPN gate ────────────────────────────────────────────────────────
+//
+// Hermes drives the installed Mullvad app through its CLI so the tunnel is up
+// before any backend is spawned. The policy and state machine live in
+// vpn-controller.ts (Electron-free, unit-tested); this section owns what only
+// main can: the persisted preference, the broadcast to every window, and the
+// IPC surface. The preference lives in userData/vpn.json rather than the
+// backend's config.yaml because it must be readable BEFORE the backend exists.
+// Renderer side: store/vpn + components/vpn-gate-overlay + settings/vpn-settings.
+const VPN_CONFIG_PATH = path.join(app.getPath('userData'), 'vpn.json')
+const MULLVAD_DOWNLOAD_URL = 'https://mullvad.net/download/vpn'
+
+// Launch flag for CI, e2e and scripted launches: HERMES_DESKTOP_VPN=off runs
+// this session with the VPN integration off, and leaves the saved preference
+// alone (nothing is written while it is set).
+const VPN_LAUNCH_OFF = /^(?:0|false|no|off)$/i.test(String(process.env.HERMES_DESKTOP_VPN ?? '').trim())
+
+function readVpnSettings() {
+  let saved
+
+  try {
+    saved = JSON.parse(fs.readFileSync(VPN_CONFIG_PATH, 'utf8'))
+  } catch {
+    // Missing / unreadable / malformed → shipped defaults (enabled, blocking).
+    saved = undefined
+  }
+
+  const settings = sanitizeVpnSettings(saved)
+
+  return VPN_LAUNCH_OFF ? { ...settings, enabled: false } : settings
+}
+
+function writeVpnSettings(settings) {
+  if (VPN_LAUNCH_OFF) {
+    return
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(VPN_CONFIG_PATH), { recursive: true })
+    fs.writeFileSync(VPN_CONFIG_PATH, JSON.stringify(settings, null, 2), 'utf8')
+  } catch (error) {
+    rememberLog(`[vpn] write failed: ${error.message}`)
+  }
+}
+
+function broadcastVpnState(state) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    const { webContents } = win
+
+    if (webContents && !webContents.isDestroyed()) {
+      webContents.send('hermes:vpn:state', state)
+    }
+  }
+}
+
+const vpn = createVpnController({
+  client: createMullvadClient(),
+  log: rememberLog,
+  onState: broadcastVpnState,
+  readSettings: readVpnSettings,
+  writeSettings: writeVpnSettings
+})
+
+// While the startup gate is closed, nothing the app's own network stack would send to the
+// open internet leaves the machine: every session's external requests are held, then released
+// the moment the tunnel is up (or the user stops requiring it). The renderer would otherwise
+// fetch theme fonts from Google the instant it mounts — before the VPN is connected. Sessions
+// are attached as they are created; a launch that never needed the gate installs nothing.
+// See electron/egress-gate.ts. Node's own http(s) and child processes are not visible to it,
+// so those call sites wait on `waitForStartupGate()` explicitly.
+const egressGate = createEgressGate({
+  isReleased: () => vpn.isStartupReleased(),
+  log: rememberLog,
+  whenReleased: () => vpn.whenStartupReleased()
+})
+
+app.on('session-created', createdSession => egressGate.attach(createdSession))
+void vpn.whenStartupReleased().then(() => egressGate.release())
+
+function waitForStartupGate() {
+  return vpn.whenStartupReleased()
+}
+
 function createWindow() {
   const icon = getAppIconPath()
   const savedWindowState = readWindowState()
@@ -15601,7 +15709,11 @@ function createWindow() {
   // this in-flight boot instead of duplicating it; early boot-progress events
   // the renderer misses are recovered by its getBootProgress() pull on mount.
   const startup = defaultRoute ? connectDesktopProfileRoute(defaultRoute) : startHermes()
-  startup.catch(error => rememberLog(error.stack || error.message))
+  startup.catch(error =>
+    // A VPN that is not up yet is an expected, recoverable state the boot overlay
+    // already explains; it is not a crash worth a stack trace.
+    rememberLog(isVpnGateError(error) ? `[vpn] ${error.message}` : error.stack || error.message)
+  )
 
   mainWindow.webContents.once('did-finish-load', () => {
     // Zoom restore is handled by wireCommonWindowHandlers (shared with session
@@ -18201,6 +18313,7 @@ app.on('before-quit', () => {
 // hold the event loop open or leak FDs past app teardown.
 app.on('will-quit', () => {
   killTimedGitChildren()
+  vpn.dispose()
   sshIsolatedKeepalives.stopAll()
   destroyKeepaliveAgents()
   nativeNotifications.dispose()
@@ -18332,6 +18445,40 @@ ipcMain.handle('hermes:quick-entry:settings:set', async (_event, patch) => {
   writeQuickEntrySettings(next)
 
   return applyQuickEntrySettings(next)
+})
+
+// Mullvad VPN gate. Main is authoritative for the tunnel and the saved
+// preference, so every handler answers with the resulting VpnState (and every
+// change is also pushed on `hermes:vpn:state`) — the renderer only paints
+// main's truth. `ensure` doubles as Connect and Retry: it is single-flight, so
+// a Settings click, the boot overlay and the eager backend start share one
+// attempt. See electron/vpn-controller.ts.
+ipcMain.handle('hermes:vpn:state:get', () => vpn.getState())
+ipcMain.handle('hermes:vpn:ensure', () => vpn.ensure())
+ipcMain.handle('hermes:vpn:refresh', () => vpn.refresh())
+ipcMain.handle('hermes:vpn:waive', () => vpn.waiveStartup())
+ipcMain.handle('hermes:vpn:settings:set', (_event, patch) =>
+  vpn.setSettings(patch && typeof patch === 'object' ? patch : {})
+)
+ipcMain.handle('hermes:vpn:disconnect', () => vpn.disconnect())
+ipcMain.handle('hermes:vpn:relays:list', () => vpn.listRelays())
+ipcMain.handle('hermes:vpn:open-app', async () => {
+  const appPath = vpn.findApp()
+
+  if (appPath) {
+    const error = await shell.openPath(appPath)
+
+    if (!error) {
+      return { opened: 'app' }
+    }
+
+    rememberLog(`[vpn] could not open the Mullvad app: ${error}`)
+  }
+
+  // No GUI on this machine (or it would not open): send them to the installer.
+  openExternalUrl(MULLVAD_DOWNLOAD_URL)
+
+  return { opened: 'download' }
 })
 
 // Quick window → main → PRIMARY renderer. We never submit here: the renderer
@@ -19268,6 +19415,10 @@ app.on('open-url', (event, url) => {
 })
 
 app.whenReady().then(() => {
+  // Hold the app's own outbound traffic behind the VPN gate before anything can load
+  // (idempotent with the `session-created` hook; covers a default session created earlier).
+  egressGate.attach(session.defaultSession)
+
   // Post-update relaunch detection (App Installer arm): when the previous
   // version wrote the one-shot pending-relaunch marker before quitting into
   // an OS package swap, consume it here — the renderer toasts "Hermes
@@ -19282,6 +19433,14 @@ app.whenReady().then(() => {
   // Warm the login-shell PATH resolution immediately so it usually completes
   // before the backend start path awaits the same single-flight promise.
   void ensureLoginShellPath()
+
+  // Bring the Mullvad tunnel up as early as possible — before the window has even
+  // loaded — and keep the renderers' view of it honest (a drop mid-session becomes
+  // a notice, not a silent failure). The eager backend start and the renderer's
+  // pre-boot wait join this same single-flight attempt. A no-op while the
+  // integration is off.
+  void vpn.ensure()
+  vpn.startMonitor()
 
   if (CRASH_DIAGNOSTICS) {
     startChromiumLogWatcher(CHROMIUM_LOG_PATH)

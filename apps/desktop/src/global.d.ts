@@ -18,6 +18,7 @@ import type {
   PetOverlayStatePayload
 } from './store/pet-overlay'
 import type { QuickEntryStatePush, QuickEntryStatus, QuickEntrySubmitPayload } from './store/quick-entry'
+import type { VpnRelayCountry, VpnSettings, VpnState } from './store/vpn'
 
 export {}
 
@@ -190,6 +191,23 @@ declare global {
         // Quick window subscribes to "you were just summoned" so it can reset
         // its draft and re-focus the input on every open.
         onShown: (callback: () => void) => () => void
+      }
+      // Mullvad VPN gate. Main owns the tunnel and the saved preference and
+      // answers every call with the resulting state, which it also pushes on
+      // `onState`. `ensure` is Connect and Retry in one (single-flight in main).
+      vpn: {
+        getState: () => Promise<VpnState>
+        ensure: () => Promise<VpnState>
+        // Re-read the live tunnel without connecting anything.
+        refresh: () => Promise<VpnState>
+        // "Continue without VPN" for this launch only (main never persists it).
+        waive: () => Promise<VpnState>
+        setSettings: (patch: Partial<VpnSettings>) => Promise<VpnState>
+        disconnect: () => Promise<VpnState>
+        listRelays: () => Promise<VpnRelayCountry[]>
+        // Opens the Mullvad app, or its download page when it is not installed.
+        openApp: () => Promise<{ opened: 'app' | 'download' }>
+        onState: (callback: (state: VpnState) => void) => () => void
       }
       getBootProgress: () => Promise<DesktopBootProgress>
       getConnectionConfig: (profile?: null | string) => Promise<DesktopConnectionConfig>

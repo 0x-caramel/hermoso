@@ -590,6 +590,63 @@ export interface Translations {
     }
   }
 
+  vpn: {
+    gate: {
+      checkingTitle: string
+      connectingTitle: string
+      waitingDescription: string
+      blockedTitle: string
+      blockedDescription: string
+      reasons: Record<
+        | 'account-expired'
+        | 'daemon-unreachable'
+        | 'error-state'
+        | 'failed'
+        | 'not-installed'
+        | 'not-logged-in'
+        | 'timeout',
+        string
+      >
+      hints: Record<
+        | 'account-expired'
+        | 'daemon-unreachable'
+        | 'error-state'
+        | 'failed'
+        | 'not-installed'
+        | 'not-logged-in'
+        | 'timeout',
+        string
+      >
+      retry: string
+      openMullvad: string
+      getMullvad: string
+      continueWithout: string
+      continueWithoutHint: string
+      details: string
+    }
+    status: {
+      connected: string
+      connecting: string
+      disconnected: string
+      disconnecting: string
+      blocked: string
+      unknown: string
+      checking: string
+      notInstalled: string
+      off: string
+      via: (place: string) => string
+    }
+    dropped: {
+      title: string
+      message: string
+      reconnect: string
+    }
+    statusbar: {
+      toggle: string
+      title: (state: string) => string
+    }
+  }
+
   notifications: {
     sharedProfileWarning: string
     region: string
@@ -802,6 +859,7 @@ export interface Translations {
       billing: string
       notifications: string
       vault: string
+      vpn: string
     }
     plugins: {
       title: string
@@ -957,6 +1015,28 @@ export interface Translations {
       completionSoundTitle: string
       completionSoundDesc: string
       completionSoundPreview: string
+    }
+    vpn: {
+      title: string
+      intro: string
+      enabledTitle: string
+      enabledDesc: string
+      blockTitle: string
+      blockDesc: string
+      statusTitle: string
+      statusDesc: string
+      connect: string
+      disconnect: string
+      openApp: string
+      getApp: string
+      locationTitle: string
+      locationDesc: string
+      locationKeep: string
+      countryLabel: string
+      cityLabel: string
+      cityAny: string
+      locationUnavailable: string
+      protectionHint: string
     }
     sections: Record<string, string>
     searchPlaceholder: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string>

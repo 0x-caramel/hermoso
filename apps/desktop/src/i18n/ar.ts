@@ -268,6 +268,62 @@ export const ar = defineLocale({
       identityProvider: 'مزود الهوية'
     }
   },
+  vpn: {
+    gate: {
+      checkingTitle: 'جارٍ فحص VPN',
+      connectingTitle: 'جارٍ الاتصال بـ Mullvad',
+      waitingDescription: 'يبدأ Hermes فور إنشاء النفق.',
+      blockedTitle: 'Hermes بانتظار VPN',
+      blockedDescription: 'يؤجّل Hermes بدءه حتى يتصل Mullvad، فلا يخرج أي شيء دون حماية.',
+      reasons: {
+        'account-expired': 'انتهى الوقت المتبقي في حساب Mullvad الخاص بك.',
+        'daemon-unreachable': 'خدمة Mullvad في الخلفية لا تستجيب.',
+        'error-state': 'تعذّر على Mullvad إنشاء النفق.',
+        failed: 'تعذّر على Hermes التواصل مع Mullvad.',
+        'not-installed': 'Mullvad VPN غير مثبّت على هذا الكمبيوتر.',
+        'not-logged-in': 'Mullvad غير مسجَّل الدخول إلى حساب.',
+        timeout: 'استغرق الاتصال وقتًا أطول من اللازم.'
+      },
+      hints: {
+        'account-expired': 'أضف وقتًا إلى حسابك على mullvad.net أو من تطبيق Mullvad، ثم حاول مجددًا.',
+        'daemon-unreachable': 'افتح تطبيق Mullvad مرة واحدة أو أعد تشغيله، ثم حاول مجددًا.',
+        'error-state': 'افتح تطبيق Mullvad لترى ما يُبلغ عنه، ثم حاول مجددًا.',
+        failed: 'تأكد من أن تطبيق Mullvad يعمل، ثم حاول مجددًا.',
+        'not-installed': 'ثبّت تطبيق Mullvad VPN، ثم حاول مجددًا.',
+        'not-logged-in': 'افتح تطبيق Mullvad وسجّل الدخول برقم حسابك، ثم حاول مجددًا.',
+        timeout: 'تحقق من اتصالك بالإنترنت، ثم حاول مجددًا.'
+      },
+      retry: 'حاول مجددًا',
+      openMullvad: 'افتح Mullvad',
+      getMullvad: 'احصل على Mullvad',
+      continueWithout: 'المتابعة بدون VPN',
+      continueWithoutHint:
+        'سيبدأ Hermes بدون VPN هذه المرة فقط. لإيقاف اشتراط VPN، أوقف «انتظار VPN قبل البدء» في الإعدادات ← VPN.',
+      details: 'التفاصيل'
+    },
+    status: {
+      connected: 'متصل',
+      connecting: 'جارٍ الاتصال',
+      disconnected: 'غير متصل',
+      disconnecting: 'جارٍ قطع الاتصال',
+      blocked: 'محظور',
+      unknown: 'غير معروف',
+      checking: 'جارٍ الفحص',
+      notInstalled: 'غير مثبّت',
+      off: 'متوقف',
+      via: place => `عبر ${place}`
+    },
+    dropped: {
+      title: 'تم قطع اتصال VPN',
+      message: 'لم تعد حركة بيانات Hermes تمر عبر Mullvad.',
+      reconnect: 'إعادة الاتصال'
+    },
+    statusbar: {
+      toggle: 'VPN',
+      title: state => `Mullvad VPN: ${state}`
+    }
+  },
+
   notifications: {
     sharedProfileWarning:
       'تستخدم نسخة أخرى من Hermes هذا الملف الشخصي. تتشارك النسختان إعداداته وبياناته، لذا قد تتعارض التغييرات. يمكنك المتابعة أو إغلاق النسخة الأخرى قبل إجراء تغييرات.',
@@ -551,7 +607,8 @@ export const ar = defineLocale({
       about: 'حول',
       notifications: 'الإشعارات',
       keybinds: 'اختصارات لوحة المفاتيح',
-      vault: 'كلمات المرور وتسجيلات الدخول'
+      vault: 'كلمات المرور وتسجيلات الدخول',
+      vpn: 'VPN'
     },
     vault: {
       title: 'كلمات المرور وتسجيلات الدخول',
@@ -686,6 +743,31 @@ export const ar = defineLocale({
       completionSoundTitle: 'صوت الاكتمال',
       completionSoundDesc: 'يُشغّل عند انتهاء دور الوكيل. اختر إعدادا مسبقا وعاينه هنا.',
       completionSoundPreview: 'معاينة'
+    },
+    vpn: {
+      title: 'VPN',
+      intro:
+        'يمكن لـ Hermes الاتصال بـ Mullvad VPN نيابةً عنك وتأجيل بدئه حتى يُنشأ النفق. يعمل عبر تطبيق Mullvad المثبّت على هذا الكمبيوتر، ويبقى حسابك في Mullvad. لكل جهاز.',
+      enabledTitle: 'استخدام Mullvad VPN',
+      enabledDesc: 'الاتصال بـ Mullvad في كل مرة يبدأ فيها Hermes.',
+      blockTitle: 'انتظار VPN قبل البدء',
+      blockDesc: 'لن يبدأ Hermes حتى يُنشأ النفق. أوقفه للاتصال في الخلفية بدلًا من ذلك.',
+      statusTitle: 'الحالة',
+      statusDesc: 'الحالة الحية لنفق Mullvad على هذا الكمبيوتر.',
+      connect: 'اتصال',
+      disconnect: 'قطع الاتصال',
+      openApp: 'افتح Mullvad',
+      getApp: 'احصل على Mullvad',
+      locationTitle: 'الموقع',
+      locationDesc:
+        'يتصل Hermes بالموقع الذي تختاره هنا. اتركه على «موقع Mullvad الحالي» للإبقاء على ما هو محدد في تطبيق Mullvad.',
+      locationKeep: 'موقع Mullvad الحالي',
+      countryLabel: 'الدولة',
+      cityLabel: 'المدينة',
+      cityAny: 'أي مدينة',
+      locationUnavailable: 'قائمة المواقع غير متاحة حتى يُثبَّت Mullvad ويعمل.',
+      protectionHint:
+        'ينتظر Hermes النفق عند البدء فقط. لحظر الحركة إذا انقطع النفق لاحقًا، فعّل «طلب VPN دائمًا» في تطبيق Mullvad.'
     },
     sections: {
       model: 'النموذج',

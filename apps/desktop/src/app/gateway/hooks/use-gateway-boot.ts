@@ -103,6 +103,7 @@ import {
   resetTileRuntimeBindings
 } from '@/store/session-states'
 import { warnIfTerminalBackendUnavailable } from '@/store/terminal-backend-warning'
+import { awaitVpnGate } from '@/store/vpn'
 import { isPeerInstanceWindow, windowProfileOverride } from '@/store/windows'
 
 import { stashGatewaySurvivor, survivorIsStale, takeGatewaySurvivor } from './gateway-hmr-survivor'
@@ -1425,6 +1426,16 @@ export function useGatewayBoot({
       let stage: 'resolving' | 'minting' | 'dialing' | 'connected' = 'resolving'
 
       try {
+        // Mullvad gate: hold the dial until the tunnel is up. The boot overlay
+        // shows the state and the way out; unbounded on purpose (the 45s budget
+        // below is for the backend cold spawn, not for a person fixing their VPN).
+        // Main enforces the same gate at spawn, so this wait is UX, not the guard.
+        await awaitVpnGate(() => cancelled)
+
+        if (cancelled) {
+          return
+        }
+
         // A profile-pinned helper window (the HUD) dials its target profile's
         // backend directly — ensureBackend spawns/reuses it from the pool.
         // Full peers use the source/profile Electron pinned before loading.

@@ -257,6 +257,62 @@ export const zhHant = defineLocale({
     }
   },
 
+  vpn: {
+    gate: {
+      checkingTitle: '正在檢查 VPN',
+      connectingTitle: '正在連線到 Mullvad',
+      waitingDescription: '通道建立後，Hermes 會立即啟動。',
+      blockedTitle: 'Hermes 正在等待 VPN',
+      blockedDescription: '在 Mullvad 連線之前，Hermes 會暫緩啟動，確保不會有未受保護的流量送出。',
+      reasons: {
+        'account-expired': '你的 Mullvad 帳戶已沒有剩餘時間。',
+        'daemon-unreachable': 'Mullvad 背景服務沒有回應。',
+        'error-state': 'Mullvad 無法建立通道。',
+        failed: 'Hermes 無法與 Mullvad 通訊。',
+        'not-installed': '這台電腦尚未安裝 Mullvad VPN。',
+        'not-logged-in': 'Mullvad 尚未登入帳戶。',
+        timeout: '連線耗時過長。'
+      },
+      hints: {
+        'account-expired': '請在 mullvad.net 或 Mullvad 應用程式中為帳戶加值時間，然後再試一次。',
+        'daemon-unreachable': '請先開啟一次 Mullvad 應用程式，或重新啟動它，然後再試一次。',
+        'error-state': '請開啟 Mullvad 應用程式查看其回報的內容，然後再試一次。',
+        failed: '請開啟 Mullvad 應用程式，確認它正在執行，然後再試一次。',
+        'not-installed': '請安裝 Mullvad VPN 應用程式，然後再試一次。',
+        'not-logged-in': '請開啟 Mullvad 應用程式，以帳號編號登入，然後再試一次。',
+        timeout: '請檢查網路連線，然後再試一次。'
+      },
+      retry: '再試一次',
+      openMullvad: '開啟 Mullvad',
+      getMullvad: '取得 Mullvad',
+      continueWithout: '不使用 VPN 繼續',
+      continueWithoutHint:
+        'Hermes 這一次會在沒有 VPN 的情況下啟動。若要不再要求 VPN，請在「設定 → VPN」中關閉「啟動前等待 VPN」。',
+      details: '詳細資料'
+    },
+    status: {
+      connected: '已連線',
+      connecting: '連線中',
+      disconnected: '已中斷連線',
+      disconnecting: '中斷連線中',
+      blocked: '已封鎖',
+      unknown: '未知',
+      checking: '檢查中',
+      notInstalled: '未安裝',
+      off: '關閉',
+      via: place => `經由 ${place}`
+    },
+    dropped: {
+      title: 'VPN 已中斷連線',
+      message: 'Hermes 的流量不再經過 Mullvad。',
+      reconnect: '重新連線'
+    },
+    statusbar: {
+      toggle: 'VPN',
+      title: state => `Mullvad VPN：${state}`
+    }
+  },
+
   notifications: {
     sharedProfileWarning:
       '另一個 Hermes 安裝實例正在使用此設定檔。兩個實例共用此設定檔的設定和資料，因此變更可能發生衝突。你可以繼續使用，也可以在變更前關閉另一個實例。',
@@ -491,7 +547,8 @@ export const zhHant = defineLocale({
       about: '關於',
       billing: '帳單',
       notifications: '通知',
-      vault: '密碼與登入'
+      vault: '密碼與登入',
+      vpn: 'VPN'
     },
     vault: {
       title: '密碼與登入',
@@ -609,6 +666,30 @@ export const zhHant = defineLocale({
       completionSoundTitle: '完成提示音',
       completionSoundDesc: '代理回合結束時播放。可在此選擇預設並預覽。',
       completionSoundPreview: '預覽'
+    },
+    vpn: {
+      title: 'VPN',
+      intro:
+        'Hermes 可以替你連線到 Mullvad VPN，並在通道建立之前暫緩啟動。它透過這台電腦上已安裝的 Mullvad 應用程式運作，你的帳戶仍保留在 Mullvad 中。依裝置設定。',
+      enabledTitle: '使用 Mullvad VPN',
+      enabledDesc: '每次啟動 Hermes 時都連線到 Mullvad。',
+      blockTitle: '啟動前等待 VPN',
+      blockDesc: '在通道建立之前，Hermes 不會啟動。關閉後會改為在背景連線。',
+      statusTitle: '狀態',
+      statusDesc: '這台電腦上 Mullvad 通道的即時狀態。',
+      connect: '連線',
+      disconnect: '中斷連線',
+      openApp: '開啟 Mullvad',
+      getApp: '取得 Mullvad',
+      locationTitle: '位置',
+      locationDesc: 'Hermes 會連線到你在此選擇的位置。保持「Mullvad 目前的位置」則沿用 Mullvad 應用程式中已選的位置。',
+      locationKeep: 'Mullvad 目前的位置',
+      countryLabel: '國家/地區',
+      cityLabel: '城市',
+      cityAny: '任意城市',
+      locationUnavailable: '在 Mullvad 安裝並執行之前，無法顯示位置清單。',
+      protectionHint:
+        'Hermes 只在啟動時等待通道。若要在通道之後中斷時封鎖流量，請在 Mullvad 應用程式中開啟「一律要求 VPN」。'
     },
     sections: {
       model: '模型',

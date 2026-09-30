@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Search,
   Settings2,
+  ShieldCheck,
   ShieldLock,
   Upload,
   Wrench,
@@ -61,6 +62,7 @@ import { SettingsSubpageHeader } from './subpage-navigation'
 import { resolveSettingsSubpage, settingsSubpageIcon, settingsSubpages } from './subpages'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 import { vaultOwnerKey, VaultSettings } from './vault-settings'
+import { VpnSettings } from './vpn-settings'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
@@ -72,6 +74,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'keybinds',
   'keys',
   'vault',
+  'vpn',
   'notifications',
   'billing',
   'sessions',
@@ -351,6 +354,13 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
             onSelect: () => setActiveView('gateway')
           },
           {
+            active: activeView === 'vpn',
+            icon: ShieldCheck,
+            id: 'vpn',
+            label: t.settings.nav.vpn,
+            onSelect: () => setActiveView('vpn')
+          },
+          {
             active: activeView === 'keybinds',
             icon: Keyboard,
             id: 'keybinds',
@@ -551,6 +561,8 @@ export function SettingsView({ onClose, onConfigSaved, onMainModelChanged }: Set
       <BillingSettings />
     ) : activeView === 'vault' ? (
       <VaultSettings key={vaultOwnerKey(activeConnectionId, scopeProfile)} subpage={subpage} />
+    ) : activeView === 'vpn' ? (
+      <VpnSettings />
     ) : (
       <SessionsSettings subpage={subpage} />
     )

@@ -564,6 +564,62 @@ export const en: Translations = {
     }
   },
 
+  vpn: {
+    gate: {
+      checkingTitle: 'Checking your VPN',
+      connectingTitle: 'Connecting to Mullvad',
+      waitingDescription: 'Hermes starts as soon as the tunnel is up.',
+      blockedTitle: 'Hermes is waiting for your VPN',
+      blockedDescription: 'Hermes holds its start until Mullvad is connected, so nothing goes out unprotected.',
+      reasons: {
+        'account-expired': 'Your Mullvad account has no time left.',
+        'daemon-unreachable': 'The Mullvad background service is not responding.',
+        'error-state': 'Mullvad could not bring the tunnel up.',
+        failed: 'Hermes could not talk to Mullvad.',
+        'not-installed': 'Mullvad VPN is not installed on this computer.',
+        'not-logged-in': 'Mullvad is not signed in to an account.',
+        timeout: 'The connection took too long to come up.'
+      },
+      hints: {
+        'account-expired': 'Add time to your account on mullvad.net or in the Mullvad app, then try again.',
+        'daemon-unreachable': 'Open the Mullvad app once, or restart it, then try again.',
+        'error-state': 'Open the Mullvad app to see what it reports, then try again.',
+        failed: 'Open the Mullvad app to check that it is running, then try again.',
+        'not-installed': 'Install the Mullvad VPN app, then try again.',
+        'not-logged-in': 'Open the Mullvad app and sign in with your account number, then try again.',
+        timeout: 'Check your internet connection, then try again.'
+      },
+      retry: 'Try again',
+      openMullvad: 'Open Mullvad',
+      getMullvad: 'Get Mullvad',
+      continueWithout: 'Continue without VPN',
+      continueWithoutHint:
+        'Hermes starts without the VPN this time only. To stop requiring it, turn off “Wait for the VPN before starting” in Settings → VPN.',
+      details: 'Details'
+    },
+    status: {
+      connected: 'Connected',
+      connecting: 'Connecting',
+      disconnected: 'Disconnected',
+      disconnecting: 'Disconnecting',
+      blocked: 'Blocked',
+      unknown: 'Unknown',
+      checking: 'Checking',
+      notInstalled: 'Not installed',
+      off: 'Off',
+      via: place => `via ${place}`
+    },
+    dropped: {
+      title: 'VPN disconnected',
+      message: 'Hermes traffic is no longer going through Mullvad.',
+      reconnect: 'Reconnect'
+    },
+    statusbar: {
+      toggle: 'VPN',
+      title: state => `Mullvad VPN: ${state}`
+    }
+  },
+
   notifications: {
     sharedProfileWarning:
       'Another Hermes installation is using this profile. Both installations share its settings and data, so changes can conflict. You can continue, or close the other installation before making changes.',
@@ -945,7 +1001,8 @@ export const en: Translations = {
       about: 'About',
       billing: 'Billing',
       notifications: 'Notifications',
-      vault: 'Passwords & Logins'
+      vault: 'Passwords & Logins',
+      vpn: 'VPN'
     },
     plugins: {
       title: 'Desktop plugins',
@@ -1140,6 +1197,31 @@ export const en: Translations = {
       completionSoundTitle: 'Completion Sound',
       completionSoundDesc: 'Plays when an agent turn finishes. Pick a preset and preview it here.',
       completionSoundPreview: 'Preview'
+    },
+    vpn: {
+      title: 'VPN',
+      intro:
+        'Hermes can connect to Mullvad VPN for you and hold its start until the tunnel is up. It drives the Mullvad app installed on this computer; your account stays in Mullvad. Per device.',
+      enabledTitle: 'Use Mullvad VPN',
+      enabledDesc: 'Connect to Mullvad every time Hermes launches.',
+      blockTitle: 'Wait for the VPN before starting',
+      blockDesc: 'Hermes does not start until the tunnel is up. Turn off to connect in the background instead.',
+      statusTitle: 'Status',
+      statusDesc: 'The live state of the Mullvad tunnel on this computer.',
+      connect: 'Connect',
+      disconnect: 'Disconnect',
+      openApp: 'Open Mullvad',
+      getApp: 'Get Mullvad',
+      locationTitle: 'Location',
+      locationDesc:
+        'Hermes connects to the location you pick here. Leave it on Mullvad’s choice to keep whatever the Mullvad app has selected.',
+      locationKeep: 'Mullvad’s current location',
+      countryLabel: 'Country',
+      cityLabel: 'City',
+      cityAny: 'Any city',
+      locationUnavailable: 'The location list is unavailable until Mullvad is installed and running.',
+      protectionHint:
+        'Hermes only waits for the tunnel when it starts. To block traffic if the tunnel drops later, turn on “Always require VPN” in the Mullvad app.'
     },
     sections: {
       model: 'Model',

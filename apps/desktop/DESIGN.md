@@ -456,6 +456,16 @@ from their root base tokens; do not multiply the global tokens or nest CSS zoom.
   On readiness, reveal the real conversation and fade controls in over 100ms.
   Never fabricate progress, delay readiness for motion, or replace a resumed
   conversation with a new greeting.
+- The Mullvad VPN gate (`VpnGateOverlay`) is the first boot surface when the
+  tunnel is required, and it reuses the boot-failure card (`shadow-nous`,
+  `--stroke-nous`, `ErrorBanner`, `Loader`) at `--z-setup`. Progress paints only
+  after a short delay (`useDelayedTrue`) so an already-up tunnel never flashes a
+  card; a block paints at once with its reason, a hint, `Try again`, and an
+  explicit `Continue without VPN` way out. Once shown it stays through a retry's
+  blocked → checking → blocked flip. It is a *startup* gate: after the app has
+  booted, a reconnect from Settings never covers the chat again, and a mid-session
+  drop is a calm warning notification, not a surface. The statusbar `vpn` chip
+  and Settings → VPN read the same store.
 - Respect `AppShell` overlay ownership. Persistent terminal/content layers,
   route overlays, dialogs, and boot surfaces must not compete through ad-hoc
   z-index literals. Pick a rung of the ladder in `styles.css` instead —

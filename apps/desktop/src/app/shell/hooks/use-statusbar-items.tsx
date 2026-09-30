@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router'
 
 import { ConnectionSwitcher } from '@/app/chat/sidebar/connection-switcher'
@@ -27,6 +27,8 @@ import {
   Hash,
   Layers3,
   Loader2,
+  ShieldCheck,
+  ShieldOff,
   Terminal,
   Zap
 } from '@/lib/icons'
@@ -78,6 +80,7 @@ import {
   $updateStatus,
   openUpdateOverlayFor
 } from '@/store/updates'
+import { $vpn, $vpnLoaded, initVpnBridge, loadVpnState, vpnPlace, vpnStatusKey } from '@/store/vpn'
 import type { StatusResponse, UsageStats } from '@/types/hermes'
 
 import { CRON_ROUTE, SETTINGS_ROUTE, WEBHOOKS_ROUTE } from '../../routes'
@@ -119,6 +122,14 @@ export function useStatusbarItems({
   const copy = t.shell.statusbar
   const freeTierCopy = t.freeTier
   const fileMenu = t.fileMenu
+  const vpn = useStore($vpn)
+  const vpnLoaded = useStore($vpnLoaded)
+
+  useEffect(() => {
+    initVpnBridge()
+    void loadVpnState()
+  }, [])
+
   const primaryActiveSessionId = useStore($activeSessionId)
   const activeGatewayProfile = useStore($activeGatewayProfile)
   // What the button paints and flips is whether the terminal is ON SCREEN —
@@ -469,6 +480,35 @@ export function useStatusbarItems({
     copy
   ])
 
+  // Mullvad tunnel chip: quiet while protected, destructive-tinted when the tunnel is down.
+  // Hidden while the integration is off. Opens Settings → VPN.
+  const vpnKey = vpnStatusKey(vpn)
+  const vpnPlaceLabel = vpnPlace(vpn)
+
+  const vpnItem = useMemo<StatusbarItem>(() => {
+    const transitioning = vpnKey === 'checking' || vpnKey === 'connecting' || vpnKey === 'disconnecting'
+    const protectedNow = vpnKey === 'connected'
+
+    return {
+      className: protectedNow || transitioning ? undefined : 'text-destructive hover:text-destructive',
+      detail: protectedNow ? (vpnPlaceLabel ?? undefined) : undefined,
+      hidden: !vpnLoaded || vpnKey === 'off',
+      icon: transitioning ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : protectedNow ? (
+        <ShieldCheck className="size-3" />
+      ) : (
+        <ShieldOff className="size-3" />
+      ),
+      id: 'vpn',
+      label: t.vpn.statusbar.toggle,
+      title: t.vpn.statusbar.title(t.vpn.status[vpnKey]),
+      to: `${SETTINGS_ROUTE}?tab=vpn`,
+      toggleLabel: t.vpn.statusbar.toggle,
+      variant: 'action'
+    }
+  }, [t, vpnKey, vpnLoaded, vpnPlaceLabel])
+
   const coreLeftStatusbarItems = useMemo<readonly StatusbarItem[]>(
     () => [
       {
@@ -628,7 +668,8 @@ export function useStatusbarItems({
         to: WEBHOOKS_ROUTE,
         toggleLabel: copy.webhooks,
         variant: 'action'
-      }
+      },
+      vpnItem
     ],
     [
       agentsOpen,
@@ -657,7 +698,8 @@ export function useStatusbarItems({
       sessionsShowing,
       subagentsFailed,
       subagentsRunning,
-      toggleCommandCenter
+      toggleCommandCenter,
+      vpnItem
     ]
   )
 

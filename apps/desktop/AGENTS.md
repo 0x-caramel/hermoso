@@ -274,6 +274,54 @@ before `npm run dev`. Stop Electron and its dev server after the run.
 
 If any answer is "not sure," that's the part to go verify.
 
+## The Mullvad gate: main holds the start, the renderer explains why
+
+Hermes can require a Mullvad tunnel before anything talks to the network. The
+seam is deliberately split along the usual authority lines:
+
+- **Main owns the tunnel and the preference.** `electron/mullvad.ts` wraps the
+  Mullvad CLI (discovery, timeouts, parsing across CLI dialects);
+  `electron/vpn-controller.ts` is the single-flight state machine
+  (`checking → connecting → ready | blocked(reason)`). The preference lives in
+  `userData/vpn.json` because it must be readable before any backend exists.
+- **The gate is enforced at spawn, in main** (`runHermesStart`,
+  `runPoolBackendStart` → `vpn.assertReady()`), before the failure latch, so a
+  tunnel that is not up yet never latches like a broken install. The renderer's
+  `awaitVpnGate()` wait is UX only; it never bypasses the guard and a broken
+  bridge never blocks a boot.
+- **The app's own network stack is held too** (`electron/egress-gate.ts`). The
+  renderer loads theme fonts from Google the instant it mounts and the update
+  poller asks GitHub, so a backend-only gate still leaked the real IP during the
+  seconds the VPN was coming up. While the startup latch (`isStartupReleased`) is
+  closed, every external request on every session is *held* in
+  `webRequest.onBeforeRequest` (renderer subresources, fetch/XHR, WebSockets, and the
+  main process's `net.fetch` / `net.request` — verified) and released when the latch
+  opens; loopback and non-network schemes are never held. The hook is removed on
+  release, and never installed when the launch did not need the gate. Node's own
+  `http`/`https` and child processes are invisible to it: those call sites await
+  `waitForStartupGate()` explicitly (today: the GitHub update check and its
+  `git ls-remote` fallback). A session with its own `onBeforeRequest` handler must
+  register it through `egressGate.attach(session, handler)`, never directly, or one
+  listener replaces the other. When you add a Node-level network call in main, gate it.
+- **It is a startup gate.** A mid-session drop is state (`tunnel`) that becomes a
+  non-blocking warning; the next spawn re-runs the gate. Mullvad's own
+  "Always require VPN" is the only real kill switch — do not reimplement one.
+- **What the real CLI does** (mullvad-cli 2026.5, Windows): `status` prints `Connected` /
+  `Connecting` / `Disconnecting` / `Disconnected` with indented detail lines, and prints
+  NOTHING (exit 0) for the ~2-3s a relay change reconnects the tunnel — an empty answer
+  reads as `connecting`, never `unknown`. `connect` returns at once; `relay set location
+  <country> [city]` reconnects a live tunnel by itself. The CLI lives in
+  `Program Files/Mullvad VPN/resources/mullvad.exe` and is not on PATH. `account get`
+  carries the expiry (`Expires at:`), which the gate turns into `account-expired`.
+  Re-check these against a real install when the CLI major changes
+  (`HERMES_E2E_REAL_MULLVAD=1 npx playwright test e2e/vpn-gate.real.spec.ts`).
+- **No credentials pass through Hermes.** Signing in stays in the Mullvad app;
+  the account number in `mullvad account get` is never read or logged.
+- **Scripted launches**: `HERMES_MULLVAD_CLI=<file.mjs>` is the only CLI candidate
+  (a JS file runs under the app's own runtime; see `e2e/fake-mullvad.mjs`), and
+  `HERMES_DESKTOP_VPN=off` runs a session with the gate off without touching the
+  saved preference. `buildAppEnv` sets it for every spec except `vpn-gate.spec.ts`.
+
 ## Nous free tier: state is pulled, never latched in the renderer
 
 The free tier (a Nous identity with no account, `hermes_cli/anon_auth.py`) reaches the renderer

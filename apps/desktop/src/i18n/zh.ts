@@ -290,6 +290,62 @@ export const zh = defineLocale({
     }
   },
 
+  vpn: {
+    gate: {
+      checkingTitle: '正在检查 VPN',
+      connectingTitle: '正在连接 Mullvad',
+      waitingDescription: '隧道建立后，Hermes 会立即启动。',
+      blockedTitle: 'Hermes 正在等待 VPN',
+      blockedDescription: '在 Mullvad 连接之前，Hermes 会暂缓启动，确保不会有未受保护的流量发出。',
+      reasons: {
+        'account-expired': '你的 Mullvad 账户已没有剩余时间。',
+        'daemon-unreachable': 'Mullvad 后台服务没有响应。',
+        'error-state': 'Mullvad 无法建立隧道。',
+        failed: 'Hermes 无法与 Mullvad 通信。',
+        'not-installed': '此电脑上未安装 Mullvad VPN。',
+        'not-logged-in': 'Mullvad 尚未登录账户。',
+        timeout: '连接耗时过长。'
+      },
+      hints: {
+        'account-expired': '请在 mullvad.net 或 Mullvad 应用中为账户充值时间，然后重试。',
+        'daemon-unreachable': '请先打开一次 Mullvad 应用，或重启它，然后重试。',
+        'error-state': '请打开 Mullvad 应用查看其提示，然后重试。',
+        failed: '请打开 Mullvad 应用，确认它正在运行，然后重试。',
+        'not-installed': '请安装 Mullvad VPN 应用，然后重试。',
+        'not-logged-in': '请打开 Mullvad 应用，用账号编号登录，然后重试。',
+        timeout: '请检查网络连接，然后重试。'
+      },
+      retry: '重试',
+      openMullvad: '打开 Mullvad',
+      getMullvad: '获取 Mullvad',
+      continueWithout: '不使用 VPN 继续',
+      continueWithoutHint:
+        'Hermes 这一次将在没有 VPN 的情况下启动。若要不再要求 VPN，请在“设置 → VPN”中关闭“启动前等待 VPN”。',
+      details: '详情'
+    },
+    status: {
+      connected: '已连接',
+      connecting: '连接中',
+      disconnected: '已断开',
+      disconnecting: '断开中',
+      blocked: '已阻止',
+      unknown: '未知',
+      checking: '检查中',
+      notInstalled: '未安装',
+      off: '关闭',
+      via: place => `经由 ${place}`
+    },
+    dropped: {
+      title: 'VPN 已断开',
+      message: 'Hermes 的流量不再经过 Mullvad。',
+      reconnect: '重新连接'
+    },
+    statusbar: {
+      toggle: 'VPN',
+      title: state => `Mullvad VPN：${state}`
+    }
+  },
+
   notifications: {
     sharedProfileWarning:
       '另一个 Hermes 安装实例正在使用此配置。两个实例共享此配置的设置和数据，因此更改可能发生冲突。你可以继续使用，也可以在更改前关闭另一个实例。',
@@ -637,7 +693,8 @@ export const zh = defineLocale({
       about: '关于',
       billing: '账单',
       notifications: '通知',
-      vault: '密码与登录'
+      vault: '密码与登录',
+      vpn: 'VPN'
     },
     vault: {
       title: '密码与登录',
@@ -825,6 +882,29 @@ export const zh = defineLocale({
       completionSoundTitle: '完成提示音',
       completionSoundDesc: '智能体回合结束时播放。可在此选择预设并预览。',
       completionSoundPreview: '预览'
+    },
+    vpn: {
+      title: 'VPN',
+      intro:
+        'Hermes 可以替你连接 Mullvad VPN，并在隧道建立之前暂缓启动。它通过本机已安装的 Mullvad 应用工作，你的账户仍保留在 Mullvad 中。按设备设置。',
+      enabledTitle: '使用 Mullvad VPN',
+      enabledDesc: '每次启动 Hermes 时都连接 Mullvad。',
+      blockTitle: '启动前等待 VPN',
+      blockDesc: '在隧道建立之前，Hermes 不会启动。关闭后将改为在后台连接。',
+      statusTitle: '状态',
+      statusDesc: '本机上 Mullvad 隧道的实时状态。',
+      connect: '连接',
+      disconnect: '断开',
+      openApp: '打开 Mullvad',
+      getApp: '获取 Mullvad',
+      locationTitle: '位置',
+      locationDesc: 'Hermes 会连接到你在此选择的位置。保持“Mullvad 当前位置”则沿用 Mullvad 应用中已选的位置。',
+      locationKeep: 'Mullvad 当前位置',
+      countryLabel: '国家/地区',
+      cityLabel: '城市',
+      cityAny: '任意城市',
+      locationUnavailable: '在 Mullvad 安装并运行之前，无法显示位置列表。',
+      protectionHint: 'Hermes 只在启动时等待隧道。若要在隧道之后断开时阻断流量，请在 Mullvad 应用中开启“始终要求 VPN”。'
     },
     sections: {
       model: '模型',

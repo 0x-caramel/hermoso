@@ -217,6 +217,9 @@ export function buildAppEnv(sandbox: Sandbox, extra: Record<string, string> = {}
     // mid-flight — otherwise the quit confirmation waits on a click that no
     // one is there to make, and the worker dies on a teardown timeout.
     HERMES_DESKTOP_SKIP_QUIT_CONFIRM: '1',
+    // The Mullvad gate would hold every launch on a box without Mullvad. Specs
+    // that exercise it (vpn-gate.spec.ts) opt back in through `extra`.
+    HERMES_DESKTOP_VPN: 'off',
     // Clear dev-server override — we want the built dist/, not a vite server.
     // The dev-server check in main.ts looks for this env var; if it's set,
     // it loads from the vite URL instead of the local file.
