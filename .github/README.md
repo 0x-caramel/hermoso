@@ -140,6 +140,13 @@ anywhere), and the folder is deleted. *Deleted is not shredded, and your model's
 On top of that, Hermoso keeps everything the Hermes Desktop VPN gate already does: it connects Mullvad at launch and
 holds the agent's backend until the tunnel is up.
 
+<p align="center">
+  <img src="../docs/hermoso/screenshots/vpn-settings.png" width="760" alt="Settings, VPN: Use Mullvad VPN, Wait for the VPN before starting, the live state of the Mullvad tunnel, and the country to connect to">
+  <br><sub><b>The VPN gate</b> (<i>Settings → VPN</i>): Hermoso connects Mullvad when he starts and waits for the tunnel before the
+  agent does; you pick the exit country here. The note at the bottom is about the startup gate: when the tunnel drops
+  <i>later</i>, the Shield freezes the agent, and Mullvad's own <i>Always require VPN</i> is what blocks the traffic.</sub>
+</p>
+
 ## See him work
 
 <table>
@@ -193,23 +200,6 @@ Open **Hermoso** in the sidebar (or *Hermoso: open* in the command palette): one
 5. **Nothing leaves your computer because of Hermoso.** No telemetry, no analytics, no network calls of his own. The
    only traffic he adds is `127.0.0.1` between the app and the agent's plugin.
 
-## Honest limits
-
-Hermoso is a guard, not a vault. The short version (the long one is in the [threat model](../docs/hermoso/THREAT-MODEL.md)):
-
-- **He is not a sandbox.** The agent still runs as you. For real isolation use a container or a VM.
-- **Only Mullvad's "Always require VPN" is a real wall** against a leak while the tunnel is down. Without it, Hermoso
-  reacts within seconds; a request already in flight is not recalled, and Hermes' own helper calls are not held.
-- **The guardian recognises patterns.** A command assembled at run time, an encoded payload or an unknown tool can pass.
-  "The guardian said nothing" means "nothing it recognises", not "safe".
-- **Rewinding undoes file changes,** not network calls, installed packages or database changes. Huge folders (your whole
-  home, more than 50,000 files) are not snapshotted, nor files over 10 MB.
-- **A ghost is deleted, not shredded.** Solid-state disks, hibernation and backups may keep traces. Your model's
-  provider still sees what you send it.
-- **Windows only** for now. The radar (it uses `netstat` and PowerShell) and the installer are written for Windows, and
-  nothing has been tried on a Mac or on Linux.
-- **Not audited.** The behaviour is tested (below), but nobody outside this project has attacked it yet.
-
 ## Install
 
 **Step by step: [INSTALL.md](../docs/hermoso/INSTALL.md).** The short version:
@@ -228,11 +218,11 @@ page if you want to be sure it is the file that was published.
 
 **From source.**
 
-Clone this repository, then:
+Clone the repository with git (not *Download ZIP*: the build reads the official Hermes commit from git), then:
 
 ```bash
+git clone https://github.com/0x-caramel/hermoso.git
 cd hermoso
-git switch hermoso
 npm install
 node apps/desktop/fork/pack.mjs          # builds and packs the app (a few minutes)
 node apps/desktop/fork/installer/build.mjs   # optional: the Windows installer

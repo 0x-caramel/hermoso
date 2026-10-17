@@ -1,7 +1,6 @@
 # Install Hermoso (Windows)
 
-Five minutes, no command line. Hermoso is **Windows 10/11 only** for now (see the
-[README](../../.github/README.md#honest-limits) for why).
+Five minutes, no command line. Hermoso is **Windows 10/11 only** for now.
 
 ## What you need
 
