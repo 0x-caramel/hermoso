@@ -150,6 +150,8 @@ Hermoso is a guard, not a vault. The short version (the long one is in the [thre
 
 ## Install
 
+**Step by step: [INSTALL.md](../docs/hermoso/INSTALL.md).** The short version:
+
 **You need:** Windows 10 or 11, and the internet the first time (Hermoso installs the Hermes runtime itself, which takes a
 few minutes). For the VPN gate, Shield and Teleport you also need [Mullvad VPN](https://mullvad.net) installed and an account
 logged in. Guardian, Time Machine and Ghost do not need it, and you can start without the VPN for one launch or switch

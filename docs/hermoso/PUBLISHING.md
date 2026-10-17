@@ -24,32 +24,40 @@ you decide.
 - **The copyright holder** is 0x-caramel.
 - **No response times are promised** in `SECURITY.md`: reports are answered as soon as possible.
 
-## Before you push
+## How it gets to GitHub
 
-1. **Which branches go.** Publish `hermoso` (the fork), `hermoso-base` (the official commit it sits on) and, if you want
-   them, `main`. Do **not** push the `backup/*` branches or `mullvad-vpn` (a separate, private fork whose commits carry
-   another identity).
-2. **GitHub Actions.** Actions are GitHub's robots: they run checks and tests by themselves every time something is pushed.
-   Hermes' repository has over fifty of them, written for Nous Research's own servers, and in a new repository they would
-   all start on your first push and mostly fail (red crosses everywhere). Two easy ways out: create the repository with the
-   **Fork** button on `NousResearch/hermes-agent` (a fork starts with Actions switched off), or, in a new repository, open
-   *Settings → Actions → General* and choose **Disable actions**.
+This copy of the repository is a *shallow* clone (it only has the last official Hermes commit, not its whole history), so
+it cannot be pushed to a brand-new empty repository. The easy way is a **fork**: GitHub already has the whole history, so
+only Hermoso's own commits travel. A fork also starts with GitHub Actions switched off, which is what you want (they are
+GitHub's robots, which run checks every time something is pushed; Hermes has over fifty, written for Nous Research's
+servers, and in a new repository they would all start and mostly fail).
 
-## Publishing
+1. Open <https://github.com/NousResearch/hermes-agent> and click **Fork** → *Create a new fork*.
+2. **Repository name:** `hermoso`. **Description:** "A bodyguard for the AI agent that works on your computer. Built on
+   Hermes Desktop." Leave *Copy the main branch only* ticked. Click **Create fork**.
+3. Push the two branches (the remote is called `github`; `origin` stays pointed at Nous Research, which `sync.mjs` uses to
+   fetch the official code, so never push there):
 
 ```bash
-git remote add origin https://github.com/0x-caramel/hermoso.git
-git push origin hermoso hermoso-base main
+git remote add github https://github.com/0x-caramel/hermoso.git
+git push github hermoso hermoso-base
 ```
 
-Then, on GitHub:
+Do **not** push `main` (the fork already has Nous Research's), the `backup/*` branches, or `mullvad-vpn` (a separate,
+private fork whose commits carry another identity). The first push may open a GitHub sign-in window: sign in as
+0x-caramel there, it is your own login.
 
-- *Settings → General → Default branch*: `hermoso`.
+If git ever says *shallow update not allowed*, run `git fetch --unshallow origin` once (it downloads the official history)
+and push again.
+
+## Then, on GitHub (a few clicks)
+
+- *Settings → General → Default branch*: switch to `hermoso` (so the front page is Hermoso's README, not Hermes').
 - *Settings → Code security → Private vulnerability reporting*: **enable it**. [`SECURITY.md`](../../.github/SECURITY.md) tells
   people to use it.
-- *About*: a description (e.g. "A bodyguard for the AI agent that works on your computer. Built on Hermes Desktop."),
-  topics (`ai-agent`, `security`, `guardrails`, `hermes-agent`, `electron`, `mullvad`, `windows`), and a social-preview
-  image (`docs/hermoso/logo.png` works).
+- *About* (the gear next to it): topics `ai-agent`, `security`, `guardrails`, `hermes-agent`, `electron`, `mullvad`,
+  `windows`.
+- *Actions*: leave them off.
 - Open the front page and check that the images and links render.
 
 ## Releasing the Windows installer
@@ -62,6 +70,11 @@ node apps/desktop/fork/installer/build.mjs      # wraps it: apps/desktop/release
 The second command prints the installer's SHA-256. Create a release, attach the `.exe`, and **paste the SHA-256 into the
 release notes** (the README and SECURITY.md tell people to compare it). The installer is not code-signed, so Windows
 SmartScreen will say "Unknown publisher"; say so in the release notes too.
+
+For the first release the text is ready: [`RELEASE-2026.10.17.md`](RELEASE-2026.10.17.md) (it already has the SHA-256 of
+`Hermoso-Setup-2026.10.17.exe`). On GitHub: *Releases → Draft a new release*, tag **`v2026.10.17`** (*Create new tag on
+publish*, target `hermoso`), title **Hermoso 2026.10.17**, paste the text, drag the `.exe` in, **Publish release**. The
+installer is `apps/desktop/release/installer/Hermoso-Setup-2026.10.17.exe`.
 
 ## Keeping it current
 
