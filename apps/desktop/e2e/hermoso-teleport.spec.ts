@@ -10,99 +10,15 @@
  *   - "Allow once" moves the connection, the agent's own `hermoso_return_home` brings it back with no question;
  *   - "Deny" is final: the agent is told, and the Mullvad CLI was never asked to move.
  *
- * Prerequisite: `npm run build` (dist/ exists). The backend runs from HERMES_E2E_HERMES_ROOT (a Hermes checkout or
- * runtime with its Python environment installed; a fork without one points it at %LOCALAPPDATA%\Hermes\hermes-agent).
+ * Prerequisite: see ./hermoso-launch.ts.
  */
 
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 
-import type { Page } from '@playwright/test'
-
-import { writeEnvFile, writeMockProviderConfig } from '../../../tests-js/scripts/mock-provider-config'
-
-import { buildAppEnv, createSandbox, launchDesktop } from './fixtures'
-import { NO_DONE, startHermosoMock, TELEPORT_NO, TELEPORT_YES, TOOLS_MISSING, YES_DONE } from './hermoso-mock-model'
+import { launchHermoso, say, waitForBackendReady } from './hermoso-launch'
+import { NO_DONE, TELEPORT_NO, TELEPORT_YES, TOOLS_MISSING, YES_DONE } from './hermoso-mock-model'
 import { expect, test } from './test'
-
-const FAKE_CLI = path.resolve(import.meta.dirname, 'fake-mullvad.mjs')
-
-interface FakeState {
-  log: string[]
-  relay: string
-  tunnel: string
-}
-
-async function launch() {
-  const mock = await startHermosoMock()
-  const sandbox = createSandbox('hermoso')
-  const statePath = path.join(sandbox.root, 'fake-mullvad.json')
-
-  writeMockProviderConfig(sandbox.hermesHome, mock.url)
-  writeEnvFile(sandbox.hermesHome)
-  fs.writeFileSync(
-    statePath,
-    JSON.stringify({ account: true, connectDelayMs: 800, relay: 'country se', tunnel: 'disconnected' })
-  )
-
-  const env = buildAppEnv(sandbox, {
-    FAKE_MULLVAD_STATE: statePath,
-    // A fresh sandbox HERMES_HOME would first install a whole toolchain before the backend listens.
-    HERMES_DISABLE_LAZY_INSTALLS: '1',
-    HERMES_DESKTOP_HERMES_ROOT: process.env.HERMES_E2E_HERMES_ROOT ?? buildAppEnv(sandbox).HERMES_DESKTOP_HERMES_ROOT,
-    HERMES_DESKTOP_VPN: 'on',
-    HERMES_MULLVAD_CLI: FAKE_CLI
-  })
-
-  const { app, page } = await launchDesktop(env)
-
-  return {
-    cleanup: async () => {
-      await app.close().catch(() => undefined)
-      await mock.close()
-
-      // HERMOSO_E2E_KEEP=1 keeps the sandbox (logs, config, plugin folder) to look at after a failure.
-      if (process.env.HERMOSO_E2E_KEEP) {
-        console.log(`[hermoso-e2e] sandbox kept at ${sandbox.root}`)
-
-        return
-      }
-
-      sandbox.cleanup()
-    },
-    mock,
-    page,
-    readState: (): FakeState => JSON.parse(fs.readFileSync(statePath, 'utf8')),
-    sandbox
-  }
-}
-
-// Main's own word that the backend came up (its boot phase reaches `backend.ready` only after the HTTP and
-// WebSocket probes pass). Polled with page.evaluate: page.waitForFunction does not await an async predicate.
-async function waitForBackendReady(page: Page, timeoutMs = 180_000) {
-  await expect
-    .poll(
-      () =>
-        page.evaluate(async () => {
-          const desktop = (
-            window as unknown as { hermesDesktop: { getBootProgress: () => Promise<{ phase: string }> } }
-          ).hermesDesktop
-
-          return (await desktop.getBootProgress()).phase
-        }),
-      { intervals: [500], message: 'main never reported the backend as ready', timeout: timeoutMs }
-    )
-    .toBe('backend.ready')
-}
-
-async function say(page: Page, text: string) {
-  const composer = page.locator('[contenteditable="true"]').first()
-
-  await composer.waitFor({ state: 'visible', timeout: 120_000 })
-  await composer.click()
-  await composer.type(text)
-  await page.keyboard.press('Enter')
-}
 
 test.describe('Hermoso Teleport through the real agent', () => {
   test.beforeEach(() => {
@@ -111,7 +27,7 @@ test.describe('Hermoso Teleport through the real agent', () => {
   })
 
   test('the person decides: a yes moves the connection and the agent brings it home, a no moves nothing', async () => {
-    const run = await launch()
+    const run = await launchHermoso()
 
     try {
       const { mock, page, readState, sandbox } = run

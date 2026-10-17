@@ -41,6 +41,24 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   no window shows it within 1.5 s; no answer in 2 minutes is a no). Hermes' own approval gate is deliberately NOT
   relied on: with approvals off, in "smart" mode (another model decides) or under YOLO it says yes without a human.
   "Always allow" is remembered per country, listed on the Hermoso page and revocable. The agent has no way to answer.
+- **Shield** (`shield.ts`, `radar.ts`, `ledger.ts`, plugin side `shield.py`): the agent stands still while the VPN is
+  required (enabled, blocking, not waived) and the tunnel is not up. The app decides, from the VPN controller's state
+  (a planned Teleport reconnect never counts as a drop); the plugin only asks (`GET /v1/shield/state`, which takes a
+  fresh look at the tunnel at most every 2 s) and holds the agent at the two places Hermes lets a plugin hold it:
+  the call to the model (an `llm_execution` middleware that WAITS inside the call: a middleware that raises is
+  skipped by Hermes, so refusing is not a way to hold) and every tool about to run (a `pre_tool_call` hook that
+  waits at most 20 s, under Hermes' own 30 s fail-closed limit, then refuses with the reason). A model on this
+  computer or the local network is not held; with no app to ask, nothing is. The radar reads the TCP connections
+  of the app and everything it started (`netstat` + the process tree) and says whether each leaves through the
+  tunnel interface, stays here, goes to the LAN, or leaves OUTSIDE; the ledger counts them and writes the proof
+  report with its limits. Mullvad's "Always require VPN" (`lockdown-mode`) is a switch in the Shield section: it
+  is the only wall that really stops a leak, and the report says so.
+  Known limits, all written where the person reads them: a Stop pressed during a freeze lets Hermes send the one
+  request it was holding (and cancel it), Hermes' own helper calls (titles, compression) are not held, the radar
+  samples every few seconds and reads TCP only.
+- **Tool search**: Hermes defers a plugin's tools behind `tool_search` / `tool_describe` / `tool_call` and lists each
+  by the first sentence of its description, clipped at 60 characters. Keep that sentence short and plain (a test
+  keeps it). A `tool_call` is unwrapped before the hooks run, so `pre_tool_call` sees the real tool name.
 - **The bridge** (`bridge.ts`) is a loopback HTTP door for the plugin: 127.0.0.1 on a port the system picks, a fresh
   256-bit bearer token per run, no browsers (no `Origin`, `Host` must be loopback), JSON only. The app tells the plugin
   where it is by writing `<hermes home>/plugins/hermoso/.bridge.json` (`bridge-file.ts`) for every home it prepared, and
@@ -60,7 +78,9 @@ Three parts that only talk through narrow doors, so an upstream update has littl
 
 Hooks into upstream files are listed in `hooks.json` and checked by `sync.mjs`. Tests: `npx vitest run electron/hermoso
 src/plugins/hermoso`, `python -B fork/plugin-tests/test_hermoso_plugin.py`, and `hermes plugins doctor
-apps/desktop/assets/hermoso-plugin` (Hermes' own loader: it must say `registrations: 4 tool(s), 0 hook(s)`).
+apps/desktop/assets/hermoso-plugin` (Hermes' own loader: it must say `registrations: 4 tool(s), 1 hook(s)`).
+End to end, with a scripted model and a scripted Mullvad: `npx playwright test e2e/hermoso-teleport.spec.ts
+e2e/hermoso-shield.spec.ts` (after `npm run build`, with `HERMES_E2E_HERMES_ROOT` pointing at a runtime).
 
 **Never run the `hermes` CLI with a throw-away `HERMES_HOME` against the real runtime** (not even `plugins doctor` or
 `plugins enable`): it prepares an "isolated runtime" and writes into the SHARED checkout (`<runtime>/.hermes/bin/*.cmd`

@@ -14,6 +14,7 @@
  *     "failConnect": false,        // true → `connect` fails like a dead daemon
  *     "stuck": false,              // true → connect is accepted but never completes
  *     "relay": "country se",       // the exit location constraint, as `relay get` prints it
+ *     "lockdown": false,          // "Always require VPN" (`lockdown-mode get|set`)
  *     "connectedAt": null,         // set by the script
  *     "log": []                    // every invocation, appended by the script
  *   }
@@ -34,7 +35,7 @@ state.log = [...(state.log ?? []), args.join(' ')]
 // A spec edits the file while the app polls this script, so write back only what this
 // invocation owns (the call log and the tunnel/relay it moved) over a fresh read, never the
 // whole snapshot it started from.
-const original = { connectedAt: state.connectedAt, relay: state.relay, tunnel: state.tunnel }
+const original = { connectedAt: state.connectedAt, lockdown: state.lockdown, relay: state.relay, tunnel: state.tunnel }
 
 const save = () => {
   const fresh = JSON.parse(fs.readFileSync(statePath, 'utf8'))
@@ -48,6 +49,10 @@ const save = () => {
 
   if (state.relay !== original.relay) {
     fresh.relay = state.relay
+  }
+
+  if (state.lockdown !== original.lockdown) {
+    fresh.lockdown = state.lockdown
   }
 
   fs.writeFileSync(statePath, JSON.stringify(fresh, null, 2))
@@ -186,6 +191,12 @@ if (command === 'status') {
 
   save()
 } else if (command === 'relay' && sub === 'set') {
+  save()
+} else if (command === 'lockdown-mode' && sub === 'get') {
+  save()
+  console.log(`Block traffic when the VPN is disconnected: ${state.lockdown ? 'on' : 'off'}`)
+} else if (command === 'lockdown-mode' && sub === 'set') {
+  state.lockdown = third === 'on'
   save()
 } else {
   save()
