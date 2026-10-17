@@ -145,7 +145,7 @@ const BLOCKED_STREAK_LIMIT = 4
 const RETRY_HOME_MS = 15_000
 const REASON_MAX = 200
 
-const clampMinutes = (minutes: unknown): number => {
+export const clampTripMinutes = (minutes: unknown): number => {
   const value = typeof minutes === 'number' && Number.isFinite(minutes) ? Math.round(minutes) : DEFAULT_TRIP_MINUTES
 
   return Math.min(MAX_TRIP_MINUTES, Math.max(MIN_TRIP_MINUTES, value))
@@ -519,7 +519,7 @@ export function createTeleport(deps: TeleportDeps) {
       ? { city: resolvedCity.code, country: country.code, kind: 'city' }
       : { country: country.code, kind: 'country' }
 
-    const minutes = clampMinutes(request.minutes)
+    const minutes = clampTripMinutes(request.minutes)
     const hopping = record !== null
     let home = record?.home ?? null
 

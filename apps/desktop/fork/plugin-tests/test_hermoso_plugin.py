@@ -8,7 +8,9 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -39,7 +41,9 @@ class FakeBridge:
 
     def __init__(self, token: str = "tok") -> None:
         self.token = token
-        self.answers: Dict[Tuple[str, str], Tuple[int, Dict[str, Any]]] = {}
+        self.answers: Dict[Tuple[str, str], Tuple[int, Dict[str, Any]]] = {
+            ("GET", "/v1/hello"): (200, {"ok": True, "app": "hermoso"})
+        }
         self.requests: List[Dict[str, Any]] = []
         outer = self
 
@@ -82,8 +86,9 @@ class FakeBridge:
         self.thread = threading.Thread(target=lambda: self.server.serve_forever(poll_interval=0.01), daemon=True)
         self.thread.start()
 
-    def env(self) -> Dict[str, str]:
-        return {"HERMOSO_BRIDGE_URL": self.url, "HERMOSO_BRIDGE_TOKEN": self.token}
+    def publish(self, directory: Path) -> None:
+        """What the app does for the plugin: write its address and secret next to it."""
+        (directory / ".bridge.json").write_text(json.dumps({"url": self.url, "token": self.token}), encoding="utf-8")
 
     def close(self) -> None:
         self.server.shutdown()
@@ -109,81 +114,127 @@ def state(country: Optional[str] = "Germany", minutes: float = 10.0, phase: str 
     return {"phase": phase, "home": {"label": "country no"} if trip else None, "trip": trip}
 
 
-class PluginTestCase(unittest.TestCase):
+class Case(unittest.TestCase):
     def setUp(self) -> None:
         self.plugin = load_plugin()
+        self.dir = Path(tempfile.mkdtemp(prefix="hermoso-plugin-test-"))
+        self.addCleanup(shutil.rmtree, self.dir, True)
         self.bridge = FakeBridge()
         self.addCleanup(self.bridge.close)
+        self.bridge.publish(self.dir)
+        self.link = self.plugin.bridge.Link(directory=self.dir, version="9.9.9")
         self.ctx = FakeCtx()
-        self.plugin.teleport.register(self.ctx, self.plugin.bridge.Bridge(self.bridge.url, "tok", timeout=5.0))
+        self.plugin.teleport.register(self.ctx, self.link)
 
     def call(self, tool: str, args: Any = None) -> Dict[str, Any]:
         raw = self.ctx.tools[tool]["handler"](args if args is not None else {})
         self.assertIsInstance(raw, str, "a tool handler must return a JSON string")
         return json.loads(raw)
 
-    def hook(self) -> Any:
-        return [callback for name, callback in self.ctx.hooks if name == "pre_tool_call"][0]
-
 
 class Registration(unittest.TestCase):
-    def test_inert_without_the_bridge_environment(self) -> None:
+    def test_registers_four_tools_each_hidden_unless_the_app_is_there_and_no_hooks(self) -> None:
         plugin = load_plugin()
         ctx = FakeCtx()
-        saved = {k: os.environ.pop(k, None) for k in ("HERMOSO_BRIDGE_URL", "HERMOSO_BRIDGE_TOKEN")}
-        try:
-            plugin.register(ctx)
-        finally:
-            for key, value in saved.items():
-                if value is not None:
-                    os.environ[key] = value
-        self.assertEqual(ctx.tools, {})
-        self.assertEqual(ctx.hooks, [])
-
-    def test_the_bridge_address_must_be_loopback_and_have_a_token(self) -> None:
-        plugin = load_plugin()
-        make = plugin.bridge.Bridge.from_env
-        self.assertIsNone(make({}))
-        self.assertIsNone(make({"HERMOSO_BRIDGE_URL": "http://127.0.0.1:5", "HERMOSO_BRIDGE_TOKEN": ""}))
-        self.assertIsNone(make({"HERMOSO_BRIDGE_URL": "http://example.com:5", "HERMOSO_BRIDGE_TOKEN": "t"}))
-        self.assertIsNone(make({"HERMOSO_BRIDGE_URL": "https://127.0.0.1:5", "HERMOSO_BRIDGE_TOKEN": "t"}))
-        self.assertIsNotNone(make({"HERMOSO_BRIDGE_URL": "http://127.0.0.1:5", "HERMOSO_BRIDGE_TOKEN": "t"}))
-
-    def test_active_with_the_environment_registers_four_tools_and_the_approval_hook(self) -> None:
-        plugin = load_plugin()
-        bridge = FakeBridge()
-        self.addCleanup(bridge.close)
-        ctx = FakeCtx()
-        old = {k: os.environ.get(k) for k in bridge.env()}
-        os.environ.update(bridge.env())
-        try:
-            plugin.register(ctx)
-        finally:
-            for key, value in old.items():
-                if value is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = value
+        plugin.register(ctx)
         self.assertEqual(
             sorted(ctx.tools), ["hermoso_exits", "hermoso_return_home", "hermoso_teleport", "hermoso_where_am_i"]
         )
-        self.assertEqual([name for name, _ in ctx.hooks], ["pre_tool_call"])
+        self.assertEqual(ctx.hooks, [], "no approval hook: the person's yes is asked by the app, not by Hermes' gate")
         for name, tool in ctx.tools.items():
             self.assertEqual(tool["toolset"], "hermoso")
+            self.assertTrue(callable(tool["check_fn"]), name)
             schema = tool["schema"]
             self.assertEqual(schema["name"], name)
             self.assertTrue(schema["description"])
             self.assertEqual(schema["parameters"]["type"], "object")
         self.assertEqual(ctx.tools["hermoso_teleport"]["schema"]["parameters"]["required"], ["country", "reason"])
 
+    def test_the_tools_are_hidden_when_no_app_is_running(self) -> None:
+        plugin = load_plugin()
+        ctx = FakeCtx()
+        directory = Path(tempfile.mkdtemp(prefix="hermoso-plugin-test-"))
+        self.addCleanup(shutil.rmtree, directory, True)
+        plugin.teleport.register(ctx, plugin.bridge.Link(directory=directory))
+        for name, tool in ctx.tools.items():
+            self.assertFalse(tool["check_fn"](), name)
+
     def test_the_manifest_declares_what_the_plugin_registers(self) -> None:
         manifest = (PLUGIN_DIR / "plugin.yaml").read_text(encoding="utf-8")
-        for name in ("hermoso_teleport", "hermoso_return_home", "hermoso_where_am_i", "hermoso_exits", "pre_tool_call"):
+        for name in ("hermoso_teleport", "hermoso_return_home", "hermoso_where_am_i", "hermoso_exits"):
             self.assertIn(name, manifest)
         self.assertIn("name: hermoso", manifest)
+        self.assertNotIn("provides_hooks", manifest)
+
+    def test_the_version_comes_from_the_manifest(self) -> None:
+        plugin = load_plugin()
+        self.assertRegex(plugin.__version__, r"^\d+\.\d+\.\d+$")
 
 
-class Teleport(PluginTestCase):
+class FindingTheApp(unittest.TestCase):
+    def setUp(self) -> None:
+        self.plugin = load_plugin()
+        self.dir = Path(tempfile.mkdtemp(prefix="hermoso-plugin-test-"))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+
+    def write(self, text: str) -> None:
+        (self.dir / ".bridge.json").write_text(text, encoding="utf-8")
+
+    def test_reads_the_address_and_secret_the_app_published(self) -> None:
+        self.write(json.dumps({"url": "http://127.0.0.1:5555/", "token": "abc"}))
+        bridge = self.plugin.bridge.Bridge.from_file(self.dir)
+        self.assertEqual(bridge.url, "http://127.0.0.1:5555")
+
+    def test_a_missing_or_damaged_file_is_no_app(self) -> None:
+        make = self.plugin.bridge.Bridge.from_file
+        self.assertIsNone(make(self.dir))
+        for text in ("", "{ not json", "[]", "null", json.dumps({"url": "http://127.0.0.1:5"}), json.dumps({"token": "t"})):
+            self.write(text)
+            self.assertIsNone(make(self.dir), text)
+
+    def test_only_a_loopback_http_address_is_ever_used(self) -> None:
+        make = self.plugin.bridge.Bridge.from_file
+        for url in ("http://example.com:5", "https://127.0.0.1:5", "http://localhost:5", "http://127.0.0.2:5", "ftp://127.0.0.1:5"):
+            self.write(json.dumps({"url": url, "token": "t"}))
+            self.assertIsNone(make(self.dir), url)
+
+    def test_a_file_with_a_byte_order_mark_is_fine(self) -> None:
+        (self.dir / ".bridge.json").write_bytes(b"\xef\xbb\xbf" + json.dumps({"url": "http://127.0.0.1:5", "token": "t"}).encode())
+        self.assertIsNotNone(self.plugin.bridge.Bridge.from_file(self.dir))
+
+
+class Availability(Case):
+    def test_available_when_a_hermoso_answers_with_this_secret(self) -> None:
+        self.assertTrue(self.link.available())
+        self.assertEqual(self.bridge.requests[-1]["path"], "/v1/hello?plugin=9.9.9")
+        self.assertEqual(self.bridge.requests[-1]["auth"], "Bearer tok")
+
+    def test_not_available_when_something_else_answers_or_nothing_does(self) -> None:
+        self.bridge.answers[("GET", "/v1/hello")] = (200, {"ok": True, "app": "somebody-else"})
+        self.assertFalse(self.plugin.bridge.Link(directory=self.dir).available())
+        self.bridge.answers[("GET", "/v1/hello")] = (200, {"ok": False})
+        self.assertFalse(self.plugin.bridge.Link(directory=self.dir).available())
+        wrong = FakeBridge(token="other")
+        self.addCleanup(wrong.close)
+        wrong.publish(self.dir)
+        wrong.token = "different"
+        self.assertFalse(self.plugin.bridge.Link(directory=self.dir).available())
+
+    def test_not_available_when_the_port_is_dead(self) -> None:
+        gone = FakeBridge()
+        gone.publish(self.dir)
+        gone.close()
+        self.assertFalse(self.plugin.bridge.Link(directory=self.dir).available())
+
+    def test_the_answer_is_kept_for_a_few_seconds_so_the_app_is_not_asked_every_turn(self) -> None:
+        link = self.plugin.bridge.Link(directory=self.dir)
+        before = len(self.bridge.requests)
+        for _ in range(5):
+            self.assertTrue(link.available())
+        self.assertEqual(len(self.bridge.requests) - before, 1)
+
+
+class Teleport(Case):
     def test_a_jump_goes_to_the_app_with_the_token_and_comes_back_as_json(self) -> None:
         self.bridge.answers[("POST", "/v1/teleport/jump")] = (200, {"ok": True, "state": state("Germany", 15)})
         result = self.call("hermoso_teleport", {"country": " Germany ", "minutes": "15", "reason": "  compare\n prices "})
@@ -195,9 +246,8 @@ class Teleport(PluginTestCase):
         request = self.bridge.requests[-1]
         self.assertEqual(request["auth"], "Bearer tok")
         self.assertEqual(request["type"], "application/json")
-        self.assertEqual(
-            request["body"], {"country": "Germany", "by": "agent", "reason": "compare\n prices", "minutes": 15}
-        )
+        # the agent does not say who it is: the app knows that a request through the bridge is the agent's
+        self.assertEqual(request["body"], {"country": "Germany", "reason": "compare\n prices", "minutes": 15})
 
     def test_a_city_is_passed_along_only_when_given(self) -> None:
         self.bridge.answers[("POST", "/v1/teleport/jump")] = (200, {"ok": True, "state": state()})
@@ -205,6 +255,15 @@ class Teleport(PluginTestCase):
         self.assertEqual(self.bridge.requests[-1]["body"]["city"], "Frankfurt")
         self.call("hermoso_teleport", {"country": "de", "reason": "x"})
         self.assertNotIn("city", self.bridge.requests[-1]["body"])
+
+    def test_a_no_from_the_person_is_final_and_says_so(self) -> None:
+        self.bridge.answers[("POST", "/v1/teleport/jump")] = (
+            200,
+            {"ok": False, "code": "denied", "message": "The user said no."},
+        )
+        result = self.call("hermoso_teleport", {"country": "de", "reason": "x"})
+        self.assertEqual((result["ok"], result["error"]), (False, "denied"))
+        self.assertIn("no", result["message"])
 
     def test_a_refusal_from_the_app_comes_back_as_an_error_with_its_reason(self) -> None:
         self.bridge.answers[("POST", "/v1/teleport/jump")] = (
@@ -217,31 +276,24 @@ class Teleport(PluginTestCase):
         self.assertIn("Atlantis", result["message"])
 
     def test_a_missing_country_never_reaches_the_app(self) -> None:
+        before = len(self.bridge.requests)
         for args in ({}, {"country": ""}, {"country": "   "}, {"reason": "x"}):
             self.assertEqual(self.call("hermoso_teleport", args)["error"], "missing-country")
-        self.assertEqual(self.bridge.requests, [])
+        self.assertEqual(len(self.bridge.requests), before)
 
-    def test_a_door_that_refuses_the_token_is_reported_not_raised(self) -> None:
-        plugin = self.plugin
-        ctx = FakeCtx()
-        plugin.teleport.register(ctx, plugin.bridge.Bridge(self.bridge.url, "WRONG", timeout=5.0))
-        raw = ctx.tools["hermoso_teleport"]["handler"]({"country": "de", "reason": "x"})
-        self.assertEqual(json.loads(raw)["error"], "unauthorized")
+    def test_a_door_that_refuses_the_secret_is_reported_not_raised(self) -> None:
+        self.bridge.token = "changed"
+        self.assertEqual(self.call("hermoso_teleport", {"country": "de", "reason": "x"})["error"], "unauthorized")
 
-    def test_a_closed_door_is_reported_not_raised(self) -> None:
-        plugin = self.plugin
-        gone = FakeBridge()
-        url = gone.url
-        gone.close()
-        ctx = FakeCtx()
-        plugin.teleport.register(ctx, plugin.bridge.Bridge(url, "tok", timeout=2.0))
+    def test_no_app_running_is_reported_not_raised(self) -> None:
+        (self.dir / ".bridge.json").unlink()
         for tool, args in (
             ("hermoso_teleport", {"country": "de", "reason": "x"}),
             ("hermoso_return_home", {}),
             ("hermoso_where_am_i", {}),
             ("hermoso_exits", {}),
         ):
-            result = json.loads(ctx.tools[tool]["handler"](args))
+            result = self.call(tool, args)
             self.assertEqual(result["ok"], False, tool)
             self.assertEqual(result["error"], "unreachable", tool)
 
@@ -264,13 +316,39 @@ class Teleport(PluginTestCase):
                 os.environ["HTTP_PROXY"] = old
 
 
-class OtherTools(PluginTestCase):
+class FollowingTheApp(Case):
+    def test_a_backend_that_outlives_the_app_finds_the_next_one_by_itself(self) -> None:
+        self.bridge.answers[("GET", "/v1/teleport/state")] = (200, {"ok": True, "state": state("France", 5)})
+        self.assertEqual(self.call("hermoso_where_am_i")["country"], "France")
+
+        # the app quits and starts again: a new port, a new secret, the same plugin instance
+        self.bridge.close()
+        second = FakeBridge(token="second-secret")
+        self.addCleanup(second.close)
+        second.answers[("GET", "/v1/teleport/state")] = (200, {"ok": True, "state": state("Sweden", 5)})
+        second.publish(self.dir)
+        self.assertEqual(self.call("hermoso_where_am_i")["country"], "Sweden")
+        self.assertEqual(second.requests[-1]["auth"], "Bearer second-secret")
+
+    def test_the_tools_disappear_when_the_app_quits_and_come_back_when_it_does(self) -> None:
+        check = self.ctx.tools["hermoso_teleport"]["check_fn"]
+        self.link._checked_at = 0.0
+        self.assertTrue(check())
+        (self.dir / ".bridge.json").unlink()
+        self.link._checked_at = 0.0
+        self.assertFalse(check())
+        self.bridge.publish(self.dir)
+        self.link._checked_at = 0.0
+        self.assertTrue(check())
+
+
+class OtherTools(Case):
     def test_return_home(self) -> None:
         self.bridge.answers[("POST", "/v1/teleport/home")] = (200, {"ok": True, "state": state(None, phase="idle")})
         result = self.call("hermoso_return_home")
         self.assertTrue(result["ok"])
         self.assertEqual(result["phase"], "idle")
-        self.assertEqual(self.bridge.requests[-1]["body"], {"by": "agent"})
+        self.assertEqual(self.bridge.requests[-1]["body"], {})
 
     def test_a_failed_return_says_so(self) -> None:
         self.bridge.answers[("POST", "/v1/teleport/home")] = (200, {"ok": False, "code": "failed", "message": "retrying in 15s"})
@@ -295,59 +373,6 @@ class OtherTools(PluginTestCase):
             self.call("hermoso_exits"),
             {"ok": True, "countries": [{"code": "de", "name": "Germany", "cities": ["fra", "ber"]}]},
         )
-
-
-class ApprovalHook(PluginTestCase):
-    def test_every_teleport_goes_to_the_human_gate_with_the_place_the_length_and_the_reason(self) -> None:
-        self.bridge.answers[("GET", "/v1/teleport/resolve")] = (
-            200,
-            {"ok": True, "country": {"code": "de", "name": "Germany"}, "city": {"code": "fra", "name": "Frankfurt"}},
-        )
-        verdict = self.hook()(tool_name="hermoso_teleport", args={"country": "germany", "city": "fra", "minutes": 20, "reason": "see the real price"})
-        self.assertEqual(verdict["action"], "approve")
-        self.assertEqual(verdict["rule_key"], "hermoso:teleport:de")
-        message = verdict["message"]
-        for expected in ("Germany (Frankfurt)", "20 min", "see the real price", "ALL of this computer's internet traffic"):
-            self.assertIn(expected, message)
-        self.assertIn("/v1/teleport/resolve?country=germany&city=fra", self.bridge.requests[-1]["path"])
-
-    def test_the_length_is_clamped_like_the_app_does(self) -> None:
-        self.bridge.answers[("GET", "/v1/teleport/resolve")] = (200, {"ok": True, "country": {"code": "de", "name": "Germany"}, "city": None})
-        for given, shown in ((999, "60 min"), (0, "10 min"), (-3, "1 min"), ("x", "10 min"), (None, "10 min")):
-            verdict = self.hook()(tool_name="hermoso_teleport", args={"country": "de", "minutes": given, "reason": "r"})
-            self.assertIn(shown, verdict["message"], given)
-
-    def test_still_asks_when_the_app_cannot_resolve_the_name(self) -> None:
-        self.bridge.answers[("GET", "/v1/teleport/resolve")] = (200, {"ok": False, "code": "unknown-destination"})
-        verdict = self.hook()(tool_name="hermoso_teleport", args={"country": "Atlantis", "reason": "r"})
-        self.assertEqual(verdict["action"], "approve")
-        self.assertIn("Atlantis", verdict["message"])
-
-    def test_still_asks_when_the_app_is_not_answering(self) -> None:
-        gone = FakeBridge()
-        url = gone.url
-        gone.close()
-        ctx = FakeCtx()
-        self.plugin.teleport.register(ctx, self.plugin.bridge.Bridge(url, "tok", timeout=2.0))
-        hook = [callback for name, callback in ctx.hooks if name == "pre_tool_call"][0]
-        verdict = hook(tool_name="hermoso_teleport", args={"country": "de", "reason": "r"})
-        self.assertEqual(verdict["action"], "approve")
-
-    def test_leaves_every_other_tool_alone(self) -> None:
-        for name in ("terminal", "web_search", "hermoso_return_home", "hermoso_where_am_i", "hermoso_exits", ""):
-            self.assertIsNone(self.hook()(tool_name=name, args={"country": "de"}), name)
-        self.assertEqual(self.bridge.requests, [])
-
-    def test_nothing_to_approve_without_a_country(self) -> None:
-        for args in ({}, {"country": ""}, {"country": "  "}, None, "x"):
-            self.assertIsNone(self.hook()(tool_name="hermoso_teleport", args=args))
-
-    def test_accepts_the_extra_keyword_arguments_hermes_passes(self) -> None:
-        self.bridge.answers[("GET", "/v1/teleport/resolve")] = (200, {"ok": True, "country": {"code": "de", "name": "Germany"}, "city": None})
-        verdict = self.hook()(
-            tool_name="hermoso_teleport", args={"country": "de", "reason": "r"}, task_id="t", session_id="s", tool_call_id="c", turn_id="n"
-        )
-        self.assertEqual(verdict["action"], "approve")
 
 
 if __name__ == "__main__":

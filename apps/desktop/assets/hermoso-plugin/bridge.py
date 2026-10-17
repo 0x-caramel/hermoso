@@ -1,24 +1,33 @@
 """The plugin's side of the bridge to the Hermoso desktop app.
 
-The app listens on 127.0.0.1 (a port the system picked) and hands the backends it starts two environment
-variables: ``HERMOSO_BRIDGE_URL`` and ``HERMOSO_BRIDGE_TOKEN``. Without them this plugin is inert: the backend
-was not started by Hermoso (the official Hermes sharing this data folder, a cron job, a terminal), and there
-is nothing to talk to.
+While Hermoso runs, it writes its address and a fresh secret into ``.bridge.json`` next to this plugin (inside
+the Hermes home it prepared) and removes the file when it quits. The plugin reads that file every time it needs
+the app, so it follows the app across restarts: a backend that outlives the app that started it, or one started
+by another program sharing this Hermes home, finds the new app by itself. When no Hermoso is running there is no
+file, or nothing answers at the address in it: the plugin's tools are then hidden from the model (see
+``available``), which is what keeps it out of the way in the official Hermes app and in a terminal.
 
-Every call is plain JSON over HTTP with a bearer token. Nothing here ever raises into the agent: a failure is a
-``BridgeError`` with a short machine-readable ``code``, which the tools turn into a JSON answer.
+Every call is plain JSON over HTTP on 127.0.0.1 with a bearer token. Nothing here ever raises into the agent: a
+failure is a ``BridgeError`` with a short machine-readable ``code``, which the tools turn into a JSON answer.
 """
 
 from __future__ import annotations
 
 import json
-import os
+import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, Optional
 
-# A jump waits for the tunnel to come up in another country (up to 30 s in the app) and a return too.
-DEFAULT_TIMEOUT = 75.0
+BRIDGE_FILE = ".bridge.json"
+
+# A jump waits for the person to answer (up to two minutes) and then for the tunnel to come up in another country
+# (up to 30 s in the app), so a call may legitimately take a while.
+DEFAULT_TIMEOUT = 180.0
+
+# How long "the app answered" stays true: the model's tool list is built often, the app must not be asked each time.
+AVAILABLE_FOR = 15.0
 
 
 class BridgeError(Exception):
@@ -39,13 +48,18 @@ class Bridge:
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     @classmethod
-    def from_env(cls, env: Optional[Dict[str, str]] = None) -> Optional["Bridge"]:
-        source = os.environ if env is None else env
-        url = (source.get("HERMOSO_BRIDGE_URL") or "").strip()
-        token = (source.get("HERMOSO_BRIDGE_TOKEN") or "").strip()
-        if not url or not token or not url.startswith("http://127.0.0.1:"):
+    def from_file(cls, directory: Optional[Path] = None, timeout: float = DEFAULT_TIMEOUT) -> Optional["Bridge"]:
+        """The bridge the running app published next to the plugin, or None when there is none (or it is damaged)."""
+        folder = directory if directory is not None else Path(__file__).resolve().parent
+        try:
+            data = json.loads((folder / BRIDGE_FILE).read_text(encoding="utf-8-sig"))
+        except (OSError, ValueError):
             return None
-        return cls(url, token)
+        url = str(data.get("url") or "").strip() if isinstance(data, dict) else ""
+        token = str(data.get("token") or "").strip() if isinstance(data, dict) else ""
+        if not url.startswith("http://127.0.0.1:") or not token:
+            return None
+        return cls(url, token, timeout)
 
     def get(self, path: str, timeout: Optional[float] = None) -> Dict[str, Any]:
         return self._call("GET", path, None, timeout)
@@ -82,3 +96,42 @@ class Bridge:
         if not isinstance(value, dict):
             raise BridgeError("bad-response", "the Hermoso app sent something that is not an object")
         return value
+
+
+class Link:
+    """What the tools hold: finds the running app each time, and says whether it is there."""
+
+    def __init__(self, directory: Optional[Path] = None, version: str = "") -> None:
+        self.directory = directory
+        self.version = version
+        self._checked_at = 0.0
+        self._answered = False
+
+    def bridge(self) -> Optional[Bridge]:
+        return Bridge.from_file(self.directory)
+
+    def require(self) -> Bridge:
+        bridge = self.bridge()
+        if bridge is None:
+            raise BridgeError("unreachable", "the Hermoso app is not running")
+        return bridge
+
+    def hello(self, bridge: Optional[Bridge] = None) -> bool:
+        """Ask the app who it is. True only for a Hermoso that answers with this secret."""
+        bridge = bridge or self.bridge()
+        if bridge is None:
+            return False
+        try:
+            reply = bridge.get("/v1/hello?plugin=%s" % self.version, timeout=2.0)
+        except BridgeError:
+            return False
+        return reply.get("ok") is True and reply.get("app") == "hermoso"
+
+    def available(self) -> bool:
+        """The tools' ``check_fn``: show them to the model only while a Hermoso is running (cached briefly)."""
+        now = time.monotonic()
+        if now - self._checked_at < AVAILABLE_FOR:
+            return self._answered
+        self._answered = self.hello()
+        self._checked_at = now
+        return self._answered

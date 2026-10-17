@@ -1,18 +1,23 @@
 /**
  * Hermoso's renderer state: whatever main last pushed, plus the actions that ask main to do something. Nothing here
- * decides anything about the tunnel: a jump that fails comes back as an answer and is shown, never guessed.
+ * decides anything about the tunnel or about consent: a jump that fails comes back as an answer and is shown, and
+ * the person's yes goes to main as it was given, never guessed.
  */
 
 import { atom } from '@hermes/plugin-sdk'
 
 import {
+  type AgentLink,
+  type AllowedItem,
+  type ConsentAnswer,
+  type ConsentPrompt,
   type Destination,
   hermosoAvailable,
   hermosoCall,
   IDLE_TELEPORT,
-  isTeleportEvent,
   type JumpRequest,
   onHermosoEvent,
+  readEvent,
   type TeleportResult,
   type TeleportState
 } from './api'
@@ -22,6 +27,15 @@ export const $destinations = atom<Destination[]>([])
 
 /** False until main's first answer lands. */
 export const $hermosoReady = atom(false)
+
+/** Requests waiting for the person's answer, oldest first. */
+export const $consent = atom<ConsentPrompt[]>([])
+
+/** What the person said "always allow" to, listed so it can be taken back. */
+export const $allowed = atom<AllowedItem[]>([])
+
+/** Whether the agent's plugin has been in touch (it reaches the app only while the app runs). */
+export const $agent = atom<AgentLink>({ seenAt: null, version: null })
 
 /** What the Mullvad tunnel says right now (the part Teleport shows: where the connection exits). */
 export interface ExitPlace {
@@ -53,6 +67,14 @@ function paintExit(state: { location: null | { city: null | string; country: nul
   })
 }
 
+function addPrompt(prompt: ConsentPrompt): void {
+  const queue = $consent.get()
+
+  if (!queue.some(entry => entry.id === prompt.id)) {
+    $consent.set([...queue, prompt])
+  }
+}
+
 /** Subscribe to main once and load the first answers. Returns the function that unsubscribes (plugin dispose). */
 export function startHermoso(): () => void {
   if (!hermosoAvailable()) {
@@ -63,8 +85,29 @@ export function startHermoso(): () => void {
 
   stops.push(
     onHermosoEvent(payload => {
-      if (isTeleportEvent(payload)) {
-        $teleport.set(payload.state)
+      const event = readEvent(payload)
+
+      switch (event?.type) {
+        case 'teleport':
+          $teleport.set(event.state)
+
+          break
+
+        case 'consent':
+          addPrompt(event.prompt)
+
+          break
+
+        case 'consent-closed':
+          $consent.set($consent.get().filter(entry => entry.id !== event.id))
+          void loadAllowed()
+
+          break
+
+        case 'agent':
+          $agent.set(event.agent)
+
+          break
       }
     })
   )
@@ -76,6 +119,11 @@ export function startHermoso(): () => void {
 
     $hermosoReady.set(true)
   })
+
+  // A window that opens (or reloads) while a request is waiting must see it.
+  void hermosoCall<ConsentPrompt[]>('consent.pending').then(list => list?.forEach(addPrompt))
+  void hermosoCall<AgentLink>('agent.state').then(link => link && $agent.set(link))
+  void loadAllowed()
 
   const vpn = vpnBridge()
 
@@ -100,6 +148,14 @@ export async function loadDestinations(): Promise<Destination[]> {
   }
 
   return list
+}
+
+export async function loadAllowed(): Promise<void> {
+  const list = await hermosoCall<AllowedItem[]>('consent.always')
+
+  if (Array.isArray(list)) {
+    $allowed.set(list)
+  }
 }
 
 // ── acting ──
@@ -133,4 +189,19 @@ export async function teleportHome(): Promise<TeleportResult> {
   $teleport.set(result.state)
 
   return result
+}
+
+/** The person's answer to a request, exactly as given. The request leaves the queue when main says it is over. */
+export async function answerConsent(id: string, answer: ConsentAnswer): Promise<void> {
+  await hermosoCall('consent.answer', { answer, id })
+}
+
+/** This window is showing the request: main need not ask with a native dialog. */
+export function ackConsent(id: string): void {
+  void hermosoCall('consent.ack', { id })
+}
+
+export async function revokeAllowed(key: string): Promise<void> {
+  await hermosoCall('consent.revoke', { key })
+  await loadAllowed()
 }

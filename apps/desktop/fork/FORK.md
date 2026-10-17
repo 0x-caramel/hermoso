@@ -8,7 +8,7 @@ Everything that is not upstream's lives in `apps/desktop/fork/` or in a short li
 | --- | --- | --- |
 | **VPN gate** | Connects Mullvad on launch and holds the backend start until the tunnel is up; an egress gate holds every external request of the app until then; boot card, Settings → VPN, statusbar chip | `electron/mullvad.ts`, `vpn-controller.ts`, `egress-gate.ts`, `src/store/vpn.ts`, `src/components/vpn-gate-overlay.tsx`, `src/app/settings/vpn-settings.tsx`; invariants in `AGENTS.md` |
 | **Own identity** | Its own name (Hermoso), executable (`Hermoso.exe`), AppUserModelID (`com.hermoso.desktop`) and wordmark, so Windows gives it its own taskbar button and icon instead of folding it into the official Hermes | `fork/identity.json` (read by every script through `fork/identity.cjs`), `fork/identity-override.cjs`, `electron/main.ts` (a few lines), `vite.config.ts`, `fork/install-shortcut.ps1` |
-| **Teleport** | Change the Mullvad exit country for a while (a chip in the status bar for the person, the `hermoso_teleport` tool for the agent, which the person approves every time), and come back by itself: the way home is written down before anything moves, survives a crash and a quit | `electron/hermoso/teleport.ts` (+ `index.ts`, `bridge.ts`, `plugin-install.ts`), `assets/hermoso-plugin/` (the agent's side), `src/plugins/hermoso/` (the window's side) |
+| **Teleport** | Change the Mullvad exit country for a while (a chip in the status bar for the person, the `hermoso_teleport` tool for the agent, which the person approves in Hermoso every time), and come back by itself: the way home is written down before anything moves, survives a crash and a quit | `electron/hermoso/teleport.ts` (+ `index.ts`, `bridge.ts`, `plugin-install.ts`), `assets/hermoso-plugin/` (the agent's side), `src/plugins/hermoso/` (the window's side) |
 | **Logo** | The brother's portrait, on the very tiles of the official logo: black ink on a white tile (light) and on a black tile with a white halo (dark), at the size and position of every official image. The official install is untouched | `fork/brand/hermoso.py`, `fork/brand/hermoso/source.png` (+ the generated images, in the `brand:` commit) |
 
 Start it from the Start Menu: **Hermoso**. The official **Hermes** shortcut keeps starting the
@@ -33,25 +33,39 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   sidebar row, command)        one IPC channel: hermoso:call          inert unless main started the backend
 ```
 
-- **Main** owns the machine: the Mullvad tunnel, the trip file (`userData/hermoso/teleport.json`), the timers.
-  `teleport.ts` is Electron-free and testable with a fake Mullvad (`fake-daemon.ts`).
+- **Main** owns the machine: the Mullvad tunnel, the trip file (`userData/hermoso/teleport.json`), the timers, the
+  person's remembered yeses (`userData/hermoso/consent.json`). `teleport.ts` and `consent.ts` are Electron-free and
+  tested with a fake Mullvad (`fake-daemon.ts`).
+- **Consent** (`consent.ts`, `native-consent.ts`): everything the agent asks that changes the computer (a teleport) waits
+  for the person's yes, asked by Hermoso itself in its window (the app comes forward; a native dialog asks instead if
+  no window shows it within 1.5 s; no answer in 2 minutes is a no). Hermes' own approval gate is deliberately NOT
+  relied on: with approvals off, in "smart" mode (another model decides) or under YOLO it says yes without a human.
+  "Always allow" is remembered per country, listed on the Hermoso page and revocable. The agent has no way to answer.
 - **The bridge** (`bridge.ts`) is a loopback HTTP door for the plugin: 127.0.0.1 on a port the system picks, a fresh
-  256-bit bearer token handed only to backends this app starts (environment), no browsers (no `Origin`, `Host` must
-  be loopback), JSON only. The plugin is a client: it never touches Mullvad.
-- **The plugin** (`assets/hermoso-plugin/`, shipped inside the app) registers four tools and a `pre_tool_call` hook that
-  sends every teleport to Hermes' human approval gate. `plugin-install.ts` copies it into each Hermes home (and lists
-  it under `plugins.enabled`, once, with a comment-preserving YAML edit; `hermes plugins enable` is the fallback). A
-  person who later switches it off in Capabilities -> Plugins is not overruled. In any backend this app did not start
-  (the official Hermes sharing the data folder) it stays inert.
+  256-bit bearer token per run, no browsers (no `Origin`, `Host` must be loopback), JSON only. The app tells the plugin
+  where it is by writing `<hermes home>/plugins/hermoso/.bridge.json` (`bridge-file.ts`) for every home it prepared, and
+  removes it on quit. The plugin reads that file on every call, so it follows the app across restarts: a backend that
+  outlives a crashed app, or one another program started, finds the next Hermoso by itself. (No environment variables:
+  the backend may not be one this app spawned.)
+- **The plugin** (`assets/hermoso-plugin/`, shipped inside the app) registers four tools, each with a `check_fn` that is
+  true only while a Hermoso answers `GET /v1/hello` with this secret, so in the official Hermes app, a terminal or cron
+  the tools are simply not offered to the model. `plugin-install.ts` copies it into each Hermes home (and lists it
+  under `plugins.enabled`, once, with a comment-preserving YAML edit; `hermes plugins enable` is the fallback). A person
+  who later switches it off in Capabilities -> Plugins is not overruled.
 - **The window plugin** is a bundled desktop plugin: nothing upstream registers it, the app finds
-  `src/plugins/*/plugin.tsx` by itself. Strings live in `strings.ts`, not in the app's language files.
+  `src/plugins/*/plugin.tsx` by itself. Strings live in `strings.ts`, not in the app's language files. It holds the
+  status-bar chip, the consent dialog (mounted next to the chip, which is always there), the Hermoso page.
 - The VPN controller gets two small additions for it: `beforeGate` (a crashed trip is brought home before the gate
   connects) and `holdTransition` (a planned reconnect is not shown as a dropped VPN).
 
 Hooks into upstream files are listed in `hooks.json` and checked by `sync.mjs`. Tests: `npx vitest run electron/hermoso
 src/plugins/hermoso`, `python -B fork/plugin-tests/test_hermoso_plugin.py`, and `hermes plugins doctor
-apps/desktop/assets/hermoso-plugin` (Hermes' own loader; run it with `HERMOSO_BRIDGE_URL=http://127.0.0.1:1` and
-`HERMOSO_BRIDGE_TOKEN=x` set to see the four tools and the hook register).
+apps/desktop/assets/hermoso-plugin` (Hermes' own loader: it must say `registrations: 4 tool(s), 0 hook(s)`).
+
+**Never run the `hermes` CLI with a throw-away `HERMES_HOME` against the real runtime** (not even `plugins doctor` or
+`plugins enable`): it prepares an "isolated runtime" and writes into the SHARED checkout (`<runtime>/.hermes/bin/*.cmd`
+with the temp paths, `ui-tui/dist`, `hermes_cli/.web_dist-build-*`), after which the app finds the install "not
+usable" and shows the first-run setup. `hermes plugins doctor <dir>` with the real home is harmless.
 
 **Real-Mullvad rule for whoever tests this:** the machine's Mullvad settings are the person's. Read `mullvad relay get`
 and `mullvad status` first, and put exactly that back at the end (`Location`, multihop, connected or not).

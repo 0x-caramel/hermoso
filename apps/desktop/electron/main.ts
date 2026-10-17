@@ -12568,7 +12568,6 @@ async function runPoolBackendStart(
           ...profileBackendParentEnv({ hermesHome: HERMES_HOME, profile }),
           HERMES_HOME,
           ...backend.env,
-          ...hermoso.backendEnv(),
           // Pin the gateway's tool/terminal cwd to the same directory we chose for
           // the child process. Inherited TERMINAL_CWD (or a stale config bridge)
           // can still point at the install dir even when spawn cwd is home.
@@ -13487,7 +13486,6 @@ async function runHermesStart({ supervisorRecovery = false }: { supervisorRecove
             // can't reliably do that, so we set it inline for every spawn.
             HERMES_HOME,
             ...backend.env,
-            ...hermoso.backendEnv(),
             TERMINAL_CWD: hermesCwd,
             HERMES_DASHBOARD_SESSION_TOKEN: token,
             // Marks this dashboard backend as desktop-spawned so it runs the cron
@@ -15355,14 +15353,8 @@ const vpn = createVpnController({
 
 // Hermoso: Teleport, the agent's bridge and plugin, and the call surface of the app's windows (electron/hermoso/).
 const hermoso = createHermoso({
-  broadcast: (channel, payload) => {
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.webContents.isDestroyed()) {
-        win.webContents.send(channel, payload)
-      }
-    }
-  },
   dataDir: app.getPath('userData'),
+  dialog,
   log: rememberLog,
   mullvad: mullvadClient,
   pluginSource: path.join(app.getAppPath(), 'assets', 'hermoso-plugin'),
@@ -15374,7 +15366,8 @@ const hermoso = createHermoso({
       return fileExists(python) ? python : null
     }
   }),
-  vpn
+  vpn,
+  windows: () => BrowserWindow.getAllWindows()
 })
 
 // While the startup gate is closed, nothing the app's own network stack would send to the

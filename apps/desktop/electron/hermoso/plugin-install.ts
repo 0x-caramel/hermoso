@@ -29,6 +29,9 @@ const BOM_AT_START = new RegExp('^' + String.fromCharCode(0xfeff))
 
 export const PLUGIN_NAME = 'hermoso'
 const MARKER = '.hermoso-install.json'
+// Files the app itself keeps beside the plugin (what was installed; where the running app can be reached): never
+// part of the plugin's content, never removed as a leftover.
+const STATE_FILES = new Set([MARKER, '.bridge.json'])
 const SKIPPED_DIRS = new Set(['__pycache__', '.pytest_cache', 'tests'])
 const ENABLE_TIMEOUT_MS = 90_000
 
@@ -71,7 +74,7 @@ function listFiles(root: string, dir = root): PluginFile[] {
       if (!SKIPPED_DIRS.has(entry.name)) {
         files.push(...listFiles(root, full))
       }
-    } else if (entry.isFile() && !entry.name.endsWith('.pyc') && entry.name !== MARKER) {
+    } else if (entry.isFile() && !entry.name.endsWith('.pyc') && !STATE_FILES.has(entry.name)) {
       files.push({ bytes: fs.readFileSync(full), rel: path.relative(root, full).split(path.sep).join('/') })
     }
   }

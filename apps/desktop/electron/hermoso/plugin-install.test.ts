@@ -121,6 +121,18 @@ describe('installing the plugin into a Hermes home', () => {
     expect(fs.existsSync(installed(home, 'old_module.py'))).toBe(false)
   })
 
+  it('leaves the files the app itself keeps beside the plugin alone (the bridge address)', async () => {
+    const home = homeWith(null)
+
+    await installPlugin(source(), home, deps())
+    fs.writeFileSync(installed(home, '.bridge.json'), '{"url":"http://127.0.0.1:1","token":"t"}')
+
+    // the app's copy changes: files are replaced and leftovers dropped, but not the address the app published
+    await installPlugin(source({ 'bridge.py': 'BRIDGE = 2\n' }), home, deps())
+    expect(fs.readFileSync(installed(home, '.bridge.json'), 'utf8')).toContain('"token":"t"')
+    expect(fs.readFileSync(installed(home, 'bridge.py'), 'utf8')).toBe('BRIDGE = 2\n')
+  })
+
   it('repairs a file someone deleted', async () => {
     const home = homeWith(null)
     const src = source()

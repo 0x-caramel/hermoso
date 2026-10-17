@@ -40,6 +40,29 @@ export interface JumpRequest {
   minutes?: number
 }
 
+export interface ConsentPrompt {
+  allowKey: null | string
+  allowLabel: null | string
+  askedAt: number
+  id: string
+  kind: string
+  lines: string[]
+  title: string
+}
+
+export type ConsentAnswer = 'always' | 'deny' | 'once'
+
+export interface AllowedItem {
+  at: number
+  key: string
+  label: string
+}
+
+export interface AgentLink {
+  seenAt: null | number
+  version: null | string
+}
+
 export const IDLE_TELEPORT: TeleportState = { error: null, home: null, phase: 'idle', trip: null, updatedAt: 0 }
 
 type HermosoBridge = {
@@ -66,6 +89,39 @@ export async function hermosoCall<T>(method: string, params?: unknown): Promise<
 
 export function onHermosoEvent(callback: (payload: unknown) => void): () => void {
   return bridge()?.onEvent(callback) ?? (() => {})
+}
+
+type HermosoEvent =
+  | { agent: AgentLink; type: 'agent' }
+  | { id: string; type: 'consent-closed' }
+  | { prompt: ConsentPrompt; type: 'consent' }
+  | { state: TeleportState; type: 'teleport' }
+
+export function readEvent(payload: unknown): HermosoEvent | null {
+  const event = payload as {
+    agent?: unknown
+    id?: unknown
+    prompt?: unknown
+    state?: { phase?: unknown }
+    type?: unknown
+  } | null
+
+  switch (event?.type) {
+    case 'teleport':
+      return event.state && typeof event.state.phase === 'string' ? (event as HermosoEvent) : null
+
+    case 'consent':
+      return event.prompt && typeof (event.prompt as { id?: unknown }).id === 'string' ? (event as HermosoEvent) : null
+
+    case 'consent-closed':
+      return typeof event.id === 'string' ? (event as HermosoEvent) : null
+
+    case 'agent':
+      return event.agent && typeof event.agent === 'object' ? (event as HermosoEvent) : null
+
+    default:
+      return null
+  }
 }
 
 export function isTeleportEvent(payload: unknown): payload is { state: TeleportState; type: 'teleport' } {

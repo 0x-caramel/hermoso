@@ -18,7 +18,14 @@ import { clock, placeName, TeleportPanel } from './teleport-panel'
 const NOW = Date.UTC(2026, 9, 17, 12, 0, 0)
 
 const DESTINATIONS: Destination[] = [
-  { cities: [{ code: 'fra', name: 'Frankfurt' }, { code: 'ber', name: 'Berlin' }], code: 'de', name: 'Germany' },
+  {
+    cities: [
+      { code: 'fra', name: 'Frankfurt' },
+      { code: 'ber', name: 'Berlin' }
+    ],
+    code: 'de',
+    name: 'Germany'
+  },
   { cities: [{ code: 'par', name: 'Paris' }], code: 'fr', name: 'France' }
 ]
 
@@ -130,7 +137,7 @@ describe('helpers', () => {
 })
 
 describe('the store', () => {
-  it('loads main\'s state, becomes ready, and follows what main pushes', async () => {
+  it("loads main's state, becomes ready, and follows what main pushes", async () => {
     const bridge = installBridge(away())
     const stop = startHermoso()
 
@@ -172,7 +179,7 @@ describe('the store', () => {
     expect(bridge.call.mock.calls.filter(call => call[0] === 'teleport.destinations')).toHaveLength(1)
   })
 
-  it('a jump and a return paint main\'s answer, and a silent main is an answer too', async () => {
+  it("a jump and a return paint main's answer, and a silent main is an answer too", async () => {
     installBridge()
 
     const jump = await teleportTo({ country: 'de', minutes: 10 })
@@ -255,7 +262,10 @@ describe('the panel at home', () => {
     fireEvent.keyDown(await screen.findByRole('option', { name: 'France' }), { key: 'Enter' })
     fireEvent.click(await screen.findByRole('button', { name: 'Teleport to France' }))
 
-    expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'The tunnel did not come up there in time. You are back home.')
+    expect(await screen.findByRole('alert')).toHaveProperty(
+      'textContent',
+      'The tunnel did not come up there in time. You are back home.'
+    )
   })
 
   it('keeps a problem that main reports in its state in view', () => {

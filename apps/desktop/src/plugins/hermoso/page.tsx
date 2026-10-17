@@ -1,13 +1,19 @@
 /**
- * The Hermoso page: who he is, and every protection he gives, one section each. Teleport is the first.
+ * The Hermoso page: who he is, and every protection he gives, one section each. Teleport is the first, then what
+ * the agent is allowed to do without asking and whether its tools are connected.
  */
 
-import { cn, useTheme } from '@hermes/plugin-sdk'
+import { Button, cn, useTheme, useValue } from '@hermes/plugin-sdk'
+import { IconPlugConnected } from '@tabler/icons-react'
+import { type ReactNode, useEffect } from 'react'
 
+import { $agent, $allowed, loadAllowed, revokeAllowed } from './store'
 import { STRINGS } from './strings'
 import { TeleportPanel } from './teleport-panel'
 
 const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
+
+const CAPTION = 'text-[0.6875rem] leading-relaxed text-(--ui-text-tertiary)'
 
 /** The brother's portrait on the app-icon tile, light or dark like the rest of the app's brand mark. */
 export function HermosoMark({ className }: { className?: string }) {
@@ -24,8 +30,57 @@ export function HermosoMark({ className }: { className?: string }) {
   )
 }
 
-function Section({ children }: { children: React.ReactNode }) {
+function Section({ children }: { children: ReactNode }) {
   return <section className="rounded-lg bg-(--ui-bg-quaternary) p-4">{children}</section>
+}
+
+function AgentTools() {
+  const T = STRINGS.agentTools
+  const agent = useValue($agent)
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <IconPlugConnected className="size-4 shrink-0 text-(--ui-text-secondary)" />
+        <span className="text-sm font-medium">{T.title}</span>
+      </div>
+      <p className="text-xs" data-testid="agent-status">
+        {agent.seenAt === null ? T.never : T.seen(agent.version ?? '?', new Date(agent.seenAt).toLocaleTimeString())}
+      </p>
+      <p className={CAPTION}>{T.hint}</p>
+    </div>
+  )
+}
+
+function Allowed() {
+  const T = STRINGS.allowed
+  const allowed = useValue($allowed)
+
+  useEffect(() => {
+    void loadAllowed()
+  }, [])
+
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-sm font-medium">{T.title}</span>
+      <p className={CAPTION}>{T.hint}</p>
+
+      {allowed.length === 0 ? (
+        <p className={CAPTION}>{T.empty}</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {allowed.map(item => (
+            <li className="flex items-center justify-between gap-3 text-sm" key={item.key}>
+              <span className="truncate">{item.label}</span>
+              <Button onClick={() => void revokeAllowed(item.key)} size="xs" type="button" variant="ghost">
+                {T.remove}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
 }
 
 export function HermosoPage() {
@@ -42,6 +97,14 @@ export function HermosoPage() {
 
         <Section>
           <TeleportPanel />
+        </Section>
+
+        <Section>
+          <Allowed />
+        </Section>
+
+        <Section>
+          <AgentTools />
         </Section>
       </div>
     </div>

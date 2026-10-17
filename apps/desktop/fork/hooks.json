@@ -94,12 +94,7 @@
     {
       "text": "await hermoso.prepare(",
       "min": 2,
-      "why": "the bridge is up and the plugin is installed in the Hermes home before each backend starts (runHermesStart, runPoolBackendStart)"
-    },
-    {
-      "text": "...hermoso.backendEnv()",
-      "min": 2,
-      "why": "the backend gets the bridge address and token, so the agent's plugin can reach the app"
+      "why": "the bridge is up, the plugin is installed in the Hermes home and told where the app is, before each backend starts (runHermesStart, runPoolBackendStart)"
     },
     {
       "text": "'hermoso:call'",

@@ -5,16 +5,26 @@
 
 export const STRINGS = {
   agentTools: {
-    active: 'Active',
-    hint: 'Hermoso’s tools reach the agent through a plugin that is installed in your Hermes home the first time this app starts a backend.',
-    inactive: 'Not active in this backend',
-    inactiveHint:
-      'This backend was started by another app, so the agent cannot use Hermoso’s tools yet. Restart the backend from Hermoso.',
+    hint: 'The agent’s tools appear in its tool list while Hermoso is running, and disappear when it is not.',
+    never: 'Not seen yet. The tools reach the agent at its next turn.',
+    seen: (version: string, time: string) => `Connected · plugin ${version} · last seen ${time}`,
     title: 'Agent tools'
+  },
+  allowed: {
+    empty: 'Nothing yet. When you choose “Always allow” for a country, it is listed here.',
+    hint: 'The agent may teleport to these countries without asking you.',
+    remove: 'Ask again',
+    title: 'Allowed without asking'
   },
   brand: {
     motto: 'The brother who protects.',
     name: 'Hermoso'
+  },
+  consent: {
+    always: (label: string) => (label ? `Always allow ${label}` : 'Always allow'),
+    deny: 'Deny',
+    description: 'Hermoso is asking whether the agent may do this.',
+    once: 'Allow once'
   },
   nav: 'Hermoso',
   palette: {

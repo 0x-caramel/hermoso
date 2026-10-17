@@ -3,13 +3,13 @@
  *
  * One object the app creates once. It owns:
  *   - Teleport (the Mullvad exit country, for a while) and its trip file;
- *   - the bridge the agent's plugin talks to, and the environment that lets a backend find it;
+ *   - consent: the person's yes, asked in the app itself, for everything the agent asks that changes the computer;
+ *   - the bridge the agent's plugin talks to, and the file that tells the plugin where it is;
  *   - the plugin's installation into each Hermes home, before that home's backend starts;
  *   - one call surface (`call`) for the app's own windows, so a new feature never needs a new IPC channel.
  *
  * main.ts reaches it in a handful of places (see fork/hooks.json): create it, let it recover before the VPN gate,
- * `prepare` a Hermes home and take `backendEnv()` before every backend spawn, answer `hermoso:call`, wait for the
- * way home on quit.
+ * `prepare` a Hermes home before every backend spawn, answer `hermoso:call`, wait for the way home on quit.
  */
 
 import path from 'node:path'
@@ -18,14 +18,33 @@ import type { MullvadClient } from '../mullvad'
 import type { VpnController } from '../vpn-controller'
 
 import { createBridge } from './bridge'
+import { removeBridgeFile, writeBridgeFile } from './bridge-file'
+import { createConsent, createFileConsentStore } from './consent'
+import { createNativeConsent, type NativeDialog } from './native-consent'
 import { createPluginInstaller, type PluginInstallDeps } from './plugin-install'
-import { createFileTeleportStore, createTeleport, resolveDestination, type TeleportRequest } from './teleport'
+import {
+  clampTripMinutes,
+  createFileTeleportStore,
+  createTeleport,
+  resolveDestination,
+  type TeleportRequest
+} from './teleport'
+
+/** What Hermoso needs of an app window (structural: this file stays Electron-free). */
+export interface HermosoWindow {
+  focus: () => void
+  isDestroyed: () => boolean
+  isMinimized: () => boolean
+  restore: () => void
+  show: () => void
+  webContents: { isDestroyed: () => boolean; send: (channel: string, payload: unknown) => void }
+}
 
 export interface HermosoDeps {
-  /** Send an event to every window. */
-  broadcast: (channel: string, payload: unknown) => void
   /** The app's data folder: Hermoso keeps its own files under `<dataDir>/hermoso`. */
   dataDir: string
+  /** For the native consent dialog, used only when no window shows a request in time. */
+  dialog: NativeDialog
   log: (message: string) => void
   mullvad: Pick<
     MullvadClient,
@@ -37,11 +56,15 @@ export interface HermosoDeps {
   /** Waiting between tunnel polls; tests pass a fake one. */
   sleep?: (ms: number) => Promise<void>
   vpn: Pick<VpnController, 'holdTransition' | 'refresh'>
+  /** The app's open windows. */
+  windows: () => HermosoWindow[]
 }
 
 export const EVENT_CHANNEL = 'hermoso:event'
 
 const QUIT_WAIT_MS = 8_000
+// A plugin that has not asked for this long is not talking to us any more.
+const AGENT_STALE_MS = 60_000
 
 const text = (value: unknown): null | string => (typeof value === 'string' && value.trim() ? value.trim() : null)
 
@@ -59,17 +82,64 @@ function parseJump(raw: unknown, by: TeleportRequest['by']): TeleportRequest {
   }
 }
 
+/** Whether the agent's plugin has been in touch, and which version of it. */
+export interface AgentLink {
+  seenAt: null | number
+  version: null | string
+}
+
 export function createHermoso(deps: HermosoDeps) {
   const { log } = deps
+  const published = new Set<string>()
+  let agent: AgentLink = { seenAt: null, version: null }
+
+  const liveWindows = () => deps.windows().filter(win => !win.isDestroyed())
+
+  const broadcast = (channel: string, payload: unknown): void => {
+    for (const win of liveWindows()) {
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send(channel, payload)
+      }
+    }
+  }
+
+  /** Bring the app forward: a question that nobody sees is no question. */
+  const reveal = (): void => {
+    try {
+      const win = liveWindows()[0]
+
+      if (win) {
+        if (win.isMinimized()) {
+          win.restore()
+        }
+
+        win.show()
+        win.focus()
+      }
+    } catch (error) {
+      log(`[hermoso] could not bring the window forward: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
 
   const teleport = createTeleport({
     client: deps.mullvad,
     hold: () => deps.vpn.holdTransition(),
     log,
     onChanged: () => void deps.vpn.refresh().catch(() => {}),
-    onState: state => deps.broadcast(EVENT_CHANNEL, { state, type: 'teleport' }),
+    onState: state => broadcast(EVENT_CHANNEL, { state, type: 'teleport' }),
     sleep: deps.sleep,
     store: createFileTeleportStore(path.join(deps.dataDir, 'hermoso', 'teleport.json'))
+  })
+
+  const consent = createConsent({
+    log,
+    native: createNativeConsent({ dialog: deps.dialog, window: () => liveWindows()[0] ?? null }),
+    present: prompt => {
+      reveal()
+      broadcast(EVENT_CHANNEL, { prompt, type: 'consent' })
+    },
+    retire: id => broadcast(EVENT_CHANNEL, { id, type: 'consent-closed' }),
+    store: createFileConsentStore(path.join(deps.dataDir, 'hermoso', 'consent.json'))
   })
 
   const installer = createPluginInstaller(deps.pluginSource, { log, runHermes: deps.runHermes })
@@ -77,30 +147,78 @@ export function createHermoso(deps: HermosoDeps) {
 
   // ── what the agent can ask (through the plugin) ──
 
-  // The agent is never the user: whatever `by` it sends, a request that comes through the bridge is the agent's.
-  bridge.route('POST', '/v1/teleport/jump', ({ body }) => teleport.jump(parseJump(body, 'agent')))
+  /**
+   * A jump the AGENT asks for: only after the person says yes, in Hermoso's own words (or said "always" for this
+   * country before). The agent is never the user: whatever `by` it sends, a request through the bridge is the agent's.
+   */
+  async function agentJump(body: unknown) {
+    const request = parseJump(body, 'agent')
+    const resolved = resolveDestination(await teleport.destinations(), request.country, request.city)
+
+    if ('message' in resolved) {
+      return { code: 'unknown-destination', message: resolved.message, ok: false, state: teleport.getState() }
+    }
+
+    const place = resolved.city ? `${resolved.country.name} (${resolved.city.name})` : resolved.country.name
+    const minutes = clampTripMinutes(request.minutes)
+
+    const decision = await consent.ask({
+      allowKey: `teleport:${resolved.country.code}`,
+      allowLabel: resolved.country.name,
+      kind: 'teleport',
+      lines: [
+        `The agent wants to move your whole computer’s internet exit to ${place} for ${minutes} minutes.`,
+        request.reason ? `Why: ${request.reason}` : 'It gave no reason.',
+        'Every app on this computer will exit from there. It comes back by itself.'
+      ],
+      title: `Teleport to ${place}?`
+    })
+
+    if (!decision.allowed) {
+      return {
+        code: 'denied',
+        message:
+          decision.answer === 'timeout' ? 'The user did not answer in time, so it was not done.' : 'The user said no.',
+        ok: false,
+        state: teleport.getState()
+      }
+    }
+
+    return teleport.jump(request)
+  }
+
+  bridge.route('GET', '/v1/hello', ({ query }) => {
+    const version = text(query.get('plugin'))
+    const now = Date.now()
+    const news = agent.seenAt === null || now - agent.seenAt > AGENT_STALE_MS || agent.version !== version
+
+    agent = { seenAt: now, version }
+
+    if (news) {
+      broadcast(EVENT_CHANNEL, { agent, type: 'agent' })
+    }
+
+    return { app: 'hermoso', ok: true, pid: process.pid }
+  })
+
+  bridge.route('POST', '/v1/teleport/jump', ({ body }) => agentJump(body))
   bridge.route('POST', '/v1/teleport/home', () => teleport.home('agent'))
   bridge.route('GET', '/v1/teleport/state', () => ({ ok: true, state: teleport.getState() }))
 
   bridge.route('GET', '/v1/teleport/destinations', async () => ({ countries: await teleport.destinations(), ok: true }))
 
-  bridge.route('GET', '/v1/teleport/resolve', async ({ query }) => {
-    const resolved = resolveDestination(await teleport.destinations(), query.get('country'), query.get('city'))
-
-    if ('message' in resolved) {
-      return { code: 'unknown-destination', message: resolved.message, ok: false }
-    }
-
-    return {
-      city: resolved.city && { code: resolved.city.code, name: resolved.city.name },
-      country: { code: resolved.country.code, name: resolved.country.name },
-      ok: true
-    }
-  })
-
   // ── what the app's own windows can ask ──
 
+  const asRecord = (value: unknown): Record<string, unknown> =>
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+
   const methods: Record<string, (params: unknown) => Promise<unknown> | unknown> = {
+    'agent.state': () => agent,
+    'consent.ack': params => consent.ack(String(asRecord(params).id)),
+    'consent.always': () => consent.always(),
+    'consent.answer': params => consent.answer(String(asRecord(params).id), asRecord(params).answer),
+    'consent.pending': () => consent.pending(),
+    'consent.revoke': params => consent.revoke(String(asRecord(params).key)),
     'teleport.destinations': () => teleport.destinations(),
     'teleport.home': () => teleport.home('user'),
     'teleport.jump': params => teleport.jump(parseJump(params, 'user')),
@@ -108,9 +226,6 @@ export function createHermoso(deps: HermosoDeps) {
   }
 
   return {
-    /** The environment a backend needs to find the bridge (empty until `prepare` has started it). */
-    backendEnv: (): Record<string, string> => bridge.env(),
-
     /** On the way out: bring the machine home, but never hold the quit for more than a few seconds. */
     async beforeQuit(): Promise<void> {
       if (!teleport.needsQuitWait()) {
@@ -133,26 +248,49 @@ export function createHermoso(deps: HermosoDeps) {
       return handler(params)
     },
 
+    consent,
+
     async dispose(): Promise<void> {
       teleport.dispose()
+
+      // The plugin must not keep an address that no longer answers.
+      for (const home of published) {
+        removeBridgeFile(home)
+      }
+
+      published.clear()
       await bridge.stop()
     },
 
     needsQuitWait: (): boolean => teleport.needsQuitWait(),
 
     /**
-     * Before a backend starts for this Hermes home: the bridge is up and the plugin is installed and enabled.
-     * Never throws and never blocks the start for longer than a failed command's timeout: a backend without the
-     * plugin is a backend without Hermoso's tools, not a broken backend.
+     * Before a backend starts for this Hermes home: the bridge is up, the plugin is installed and enabled, and the
+     * plugin has been told where the app is. Never throws and never blocks the start for longer than a failed
+     * command's timeout: a backend without the plugin is a backend without Hermoso's tools, not a broken backend.
      */
     async prepare(hermesHome: string): Promise<void> {
+      let address: { token: string; url: string } | null = null
+
       try {
-        await bridge.start()
+        address = await bridge.start()
       } catch (error) {
         log(`[hermoso] the bridge did not start: ${error instanceof Error ? error.message : String(error)}`)
       }
 
-      await installer.prepare(hermesHome)
+      const installed = await installer.prepare(hermesHome)
+
+      // Only a home that really has the plugin is told where the app is.
+      if (address && installed) {
+        try {
+          writeBridgeFile(hermesHome, address)
+          published.add(hermesHome)
+        } catch (error) {
+          log(
+            `[hermoso] could not tell the plugin where the app is: ${error instanceof Error ? error.message : String(error)}`
+          )
+        }
+      }
     },
 
     /** At launch, before the VPN gate connects anything: a trip left open by a crash is brought home. */
