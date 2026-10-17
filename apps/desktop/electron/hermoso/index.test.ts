@@ -64,6 +64,7 @@ function make(
     dialog?: any
     env?: NodeJS.ProcessEnv
     exec?: any
+    ghost?: any
     interfaces?: any
     source?: string
     windows?: HermosoWindow[]
@@ -96,6 +97,7 @@ function make(
     dialog: extra.dialog ?? { showMessageBox },
     env: extra.env ?? {},
     exec: extra.exec,
+    ghost: extra.ghost,
     interfaces: extra.interfaces,
     log,
     mullvad: daemon.client,
@@ -877,5 +879,183 @@ describe('the time machine', () => {
 
     expect(await h.hermoso.call('timemachine.rewound')).toBe(true)
     expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ rewinds: 1 })
+  })
+})
+
+describe('the ghost', () => {
+  const ghostOptions = (patch: Record<string, unknown> = {}) => {
+    const root = temp()
+    const spawn = vi.fn(() => ({ pid: 6001, unref: vi.fn() }))
+    const exit = vi.fn()
+    const registerPanicKey = vi.fn(() => true)
+
+    return {
+      exit,
+      ghost: {
+        appPath: 'C:\\app',
+        exit,
+        execPath: 'C:\\Hermoso.exe',
+        isAlive: () => false,
+        packaged: true,
+        registerPanicKey,
+        spawn,
+        tmpRoot: root,
+        ...patch
+      },
+      registerPanicKey,
+      root,
+      spawn
+    }
+  }
+
+  /** A ghost's own folder, as the main window would have made it. */
+  const ghostFolder = (root: string, id = '0123456789ab') => {
+    const dir = path.join(root, `hermoso-ghost-${id}`)
+
+    fs.mkdirSync(path.join(dir, 'hermes-home'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'ghost.json'), JSON.stringify({ createdAt: 1, owner: 1 }))
+
+    return dir
+  }
+
+  it('is opened from the main window: a second Hermoso in a folder of its own, with the setup copied and nothing else', async () => {
+    const { ghost, spawn, root } = ghostOptions()
+    const env: NodeJS.ProcessEnv = { KEEP: '1' }
+    const h = make({}, { env, ghost })
+
+    await h.hermoso.prepare(h.home)
+    fs.writeFileSync(path.join(h.home, 'config.yaml'), 'model: x\n')
+    fs.writeFileSync(path.join(h.home, 'state.db'), 'all the chats')
+
+    expect(await h.hermoso.call('ghost.state')).toMatchObject({ canOpen: true, ghost: false })
+
+    const result: any = await h.hermoso.call('ghost.open')
+
+    expect(result.ok).toBe(true)
+    expect(path.dirname(result.dir)).toBe(root)
+    expect(spawn).toHaveBeenCalledTimes(1)
+
+    const [file, args, options] = spawn.mock.calls[0] as unknown as [string, string[], any]
+
+    expect(file).toBe('C:\\Hermoso.exe')
+    expect(args).toEqual(['--hermoso-ghost'])
+    expect(options.env.KEEP).toBe('1')
+    expect(options.env.HERMES_HOME).toBe(path.join(result.dir, 'hermes-home'))
+    expect(options.env.HERMES_DESKTOP_USER_DATA_DIR).toBe(path.join(result.dir, 'user-data'))
+    expect(options.env.HERMOSO_GHOST).toBe(result.dir)
+    expect(fs.existsSync(path.join(result.dir, 'hermes-home', 'config.yaml'))).toBe(true)
+    expect(fs.existsSync(path.join(result.dir, 'hermes-home', 'state.db'))).toBe(false)
+    expect(((await h.hermoso.call('stats.get')) as any).counters.ghosts).toBe(1)
+  })
+
+  it('cannot be opened before the agent has started (there is no setup to copy yet), or without the app’s help', async () => {
+    const { ghost } = ghostOptions()
+    const early = make({}, { ghost })
+
+    expect(await early.hermoso.call('ghost.open')).toMatchObject({ code: 'no-setup', ok: false })
+
+    const bare = make()
+
+    expect(await bare.hermoso.call('ghost.state')).toMatchObject({ canOpen: false, ghost: false })
+    expect(await bare.hermoso.call('ghost.open')).toMatchObject({ code: 'unavailable', ok: false })
+  })
+
+  it('passes a debugging port to the ghost only when the person’s own environment asks for it (a test does)', async () => {
+    const { ghost, spawn } = ghostOptions()
+    const h = make({}, { env: { HERMOSO_GHOST_DEBUG_PORT: '9777' }, ghost })
+
+    await h.hermoso.prepare(h.home)
+    fs.writeFileSync(path.join(h.home, 'config.yaml'), 'model: x\n')
+    await h.hermoso.call('ghost.open')
+    expect((spawn.mock.calls[0] as unknown as [string, string[]])[1]).toEqual([
+      '--hermoso-ghost',
+      '--remote-debugging-port=9777'
+    ])
+  })
+
+  it('a ghost knows it is one, claims its folder, binds the panic key, and cannot open another', async () => {
+    const { ghost, registerPanicKey, root } = ghostOptions()
+    const dir = ghostFolder(root)
+    const h = make({}, { env: { HERMOSO_GHOST: dir }, ghost })
+
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'ghost.json'), 'utf8')).owner).toBe(process.pid)
+    expect(await h.hermoso.call('ghost.state')).toEqual({
+      canOpen: false,
+      ghost: true,
+      key: 'CommandOrControl+Alt+Shift+Backspace'
+    })
+    expect(await h.hermoso.call('ghost.open')).toMatchObject({ code: 'unavailable', ok: false })
+
+    await h.hermoso.prepare(h.home)
+    await h.hermoso.prepare(h.home)
+    expect(registerPanicKey).toHaveBeenCalledTimes(1)
+    expect(registerPanicKey).toHaveBeenCalledWith('CommandOrControl+Alt+Shift+Backspace', expect.any(Function))
+  })
+
+  it('the panic key (and the button) delete the folder as the ghost goes, and quit at once', async () => {
+    const { exit, ghost, registerPanicKey, root, spawn } = ghostOptions()
+    const dir = ghostFolder(root)
+    const h = make({}, { env: { HERMOSO_GHOST: dir }, ghost })
+
+    await h.hermoso.prepare(h.home)
+
+    const pressed = (registerPanicKey.mock.calls[0] as unknown as [string, () => void])[1]
+
+    pressed()
+    await vi.waitFor(() => expect(exit).toHaveBeenCalledTimes(1))
+    expect(spawn).toHaveBeenCalledTimes(1)
+    expect((spawn.mock.calls[0] as unknown as [string, string[]])[0]).toMatch(/powershell|sh/)
+
+    expect(await h.hermoso.call('ghost.panic')).toEqual({ ok: true })
+    expect(exit).toHaveBeenCalledTimes(2)
+  })
+
+  it('closing a ghost the usual way deletes its folder too, without holding the quit', async () => {
+    const { ghost, root, spawn } = ghostOptions()
+    const dir = ghostFolder(root)
+    const h = make({}, { env: { HERMOSO_GHOST: dir }, ghost })
+
+    // main.ts runs beforeQuit() only when this says so: a ghost always has something to do on the way out
+    expect(h.hermoso.needsQuitWait()).toBe(true)
+    expect(make().hermoso.needsQuitWait()).toBe(false)
+    await h.hermoso.beforeQuit()
+    expect(spawn).toHaveBeenCalledTimes(1)
+  })
+
+  it('a path in the environment that is not a ghost’s folder makes nothing a ghost, and the panic key wipes nothing', async () => {
+    const { exit, ghost, root, spawn } = ghostOptions()
+    const precious = path.join(root, 'documents')
+
+    fs.mkdirSync(precious)
+
+    for (const value of [precious, root, path.join(root, 'hermoso-ghost-nothex'), os.homedir()]) {
+      const h = make({}, { env: { HERMOSO_GHOST: value }, ghost })
+
+      expect(await h.hermoso.call('ghost.state'), value).toMatchObject({ ghost: false })
+      expect(await h.hermoso.call('ghost.panic')).toEqual({ ok: false })
+      await h.hermoso.beforeQuit()
+    }
+
+    expect(spawn).not.toHaveBeenCalled()
+    expect(exit).not.toHaveBeenCalled()
+    expect(fs.existsSync(precious)).toBe(true)
+  })
+
+  it('the main window forgets ghost folders nobody owns, at its first start of an agent, and leaves live and other folders', async () => {
+    const { ghost, root } = ghostOptions({ isAlive: (pid: number) => pid === 4444 })
+    const stale = ghostFolder(root, '000000000001')
+    const alive = ghostFolder(root, '000000000002')
+    const other = path.join(root, 'documents')
+
+    fs.mkdirSync(other)
+    fs.writeFileSync(path.join(stale, 'ghost.json'), JSON.stringify({ createdAt: 1, owner: 4000 }))
+    fs.writeFileSync(path.join(alive, 'ghost.json'), JSON.stringify({ createdAt: 1, owner: 4444 }))
+
+    const h = make({}, { ghost })
+
+    await h.hermoso.prepare(h.home)
+    expect(fs.existsSync(stale)).toBe(false)
+    expect(fs.existsSync(alive)).toBe(true)
+    expect(fs.existsSync(other)).toBe(true)
   })
 })

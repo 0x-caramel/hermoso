@@ -9,12 +9,15 @@ import { atom, host } from '@hermes/plugin-sdk'
 import {
   type AgentLink,
   type AllowedItem,
+  CALM_GHOST,
   CALM_GUARDIAN,
   CALM_SHIELD,
   CALM_TIME_MACHINE,
   type ConsentAnswer,
   type ConsentPrompt,
   type Destination,
+  type GhostOpenResult,
+  type GhostView,
   type GuardianView,
   hermosoAvailable,
   hermosoCall,
@@ -37,6 +40,9 @@ export const $destinations = atom<Destination[]>([])
 
 /** The Time Machine: whether the person wants snapshots, and whether this run of Hermes has them. */
 export const $timeMachine = atom<TimeMachineView>(CALM_TIME_MACHINE)
+
+/** Whether this window is a ghost (a Hermoso that keeps nothing), and whether it can open one. */
+export const $ghost = atom<GhostView>(CALM_GHOST)
 
 /** The guardian: switched on or off, what it asked and refused, its last decisions. */
 export const $guardian = atom<GuardianView>(CALM_GUARDIAN)
@@ -161,6 +167,7 @@ export function startHermoso(): () => void {
   void hermosoCall<ShieldState>('shield.state').then(state => state && $shield.set(state))
   void loadGuardian()
   void loadTimeMachine()
+  void loadGhost()
   void loadAllowed()
 
   const vpn = vpnBridge()
@@ -384,4 +391,30 @@ export async function restoreSnapshot(sessionId: string, hash: string): Promise<
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error), success: false }
   }
+}
+
+// ── the ghost ──
+
+export async function loadGhost(): Promise<void> {
+  const view = await hermosoCall<GhostView>('ghost.state')
+
+  if (view && typeof view.ghost === 'boolean' && typeof view.canOpen === 'boolean') {
+    $ghost.set(view)
+  }
+}
+
+/** Ask main to open a ghost window. What comes back says whether it is opening, or why not. */
+export async function openGhost(): Promise<GhostOpenResult> {
+  return (
+    (await hermosoCall<GhostOpenResult>('ghost.open')) ?? {
+      code: 'silent',
+      message: 'Hermoso did not answer.',
+      ok: false
+    }
+  )
+}
+
+/** The panic button of a ghost: its folder is deleted as it goes, and the window closes at once. */
+export async function panicGhost(): Promise<void> {
+  await hermosoCall('ghost.panic')
 }

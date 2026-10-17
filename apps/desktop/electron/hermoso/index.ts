@@ -22,6 +22,18 @@ import { createBridge } from './bridge'
 import { removeBridgeFile, writeBridgeFile } from './bridge-file'
 import { createConsent, createFileConsentStore } from './consent'
 import { runCommand } from './exec'
+import {
+  claimGhost,
+  GHOST_DEBUG_PORT_ENV,
+  GHOST_ENV,
+  isGhostDir,
+  launchGhost,
+  PANIC_KEY,
+  pidAlive,
+  type SpawnFn,
+  sweepStale,
+  wipeLater
+} from './ghost'
 import { createGuardian, type GuardianDecision, loadRuleTable, type RuleTable } from './guardian'
 import { createLedger } from './ledger'
 import { createNativeConsent, type NativeDialog } from './native-consent'
@@ -55,6 +67,21 @@ export interface HermosoDeps {
   dataDir: string
   /** The environment the Hermes backends inherit (the app's own, unless a test passes one). */
   env?: NodeJS.ProcessEnv
+  /** Ghost: what only the app itself knows. Without it there is no ghost to open (and none is one). */
+  ghost?: {
+    appPath: string
+    execPath: string
+    /** Quit at once, without the usual orderly goodbye (the panic key). */
+    exit: () => void
+    /** The command line of this app: a ghost keeps the flags that decide how a window is drawn. */
+    flags?: readonly string[]
+    isAlive?: (pid: number) => boolean
+    packaged: boolean
+    /** Bind a key that works whatever app is in front; false when the key is taken. */
+    registerPanicKey?: (accelerator: string, handler: () => void) => boolean
+    spawn?: SpawnFn
+    tmpRoot?: string
+  }
   /** For the native consent dialog, used only when no window shows a request in time. */
   dialog: NativeDialog
   /** Runs `netstat` and the process list for the radar. */
@@ -177,6 +204,35 @@ export function createHermoso(deps: HermosoDeps) {
 
   const timeMachineActive = /^(?:1|true|yes|on)$/i.test(String(env.HERMES_TUI_CHECKPOINTS ?? '').trim())
   const timeMachineView = () => ({ active: timeMachineActive, enabled: settings.get().timeMachine })
+
+  // ── Ghost: a window that keeps nothing ──
+
+  const ghostTmp = deps.ghost?.tmpRoot ?? os.tmpdir()
+
+  // A ghost is a process whose own folder (the variable its parent set) really is a ghost's folder: a path that
+  // merely looks like one in the environment can never make this wipe anything else.
+  const ghostDir =
+    deps.ghost && env[GHOST_ENV] && isGhostDir(String(env[GHOST_ENV]), ghostTmp) ? String(env[GHOST_ENV]) : null
+
+  let activeHome: null | string = null
+  let ghostReady = false
+
+  if (ghostDir) {
+    claimGhost(ghostDir, process.pid)
+  }
+
+  /** Delete this ghost's folder once its processes are gone, and quit at once. */
+  const panic = async () => {
+    if (!ghostDir) {
+      return { ok: false }
+    }
+
+    // The helper has to be on its way before this quits, or it goes down with it.
+    await wipeLater(ghostDir, ghostTmp, { spawn: deps.ghost?.spawn })
+    deps.ghost?.exit()
+
+    return { ok: true }
+  }
 
   // ── shield: the agent stands still while the VPN is required and the tunnel is not up ──
 
@@ -389,6 +445,40 @@ export function createHermoso(deps: HermosoDeps) {
     'consent.answer': params => consent.answer(String(asRecord(params).id), asRecord(params).answer),
     'consent.pending': () => consent.pending(),
     'consent.revoke': params => consent.revoke(String(asRecord(params).key)),
+    'ghost.open': () => {
+      if (ghostDir || !deps.ghost) {
+        return { code: 'unavailable', message: 'A ghost can be opened from the main window only.', ok: false }
+      }
+
+      if (!activeHome) {
+        return { code: 'no-setup', message: 'Hermoso has not started its agent yet: try again in a moment.', ok: false }
+      }
+
+      const port = Number(env[GHOST_DEBUG_PORT_ENV])
+
+      const result = launchGhost({
+        appPath: deps.ghost.appPath,
+        debugPort: Number.isInteger(port) && port > 0 ? port : undefined,
+        env,
+        execPath: deps.ghost.execPath,
+        flags: deps.ghost.flags,
+        packaged: deps.ghost.packaged,
+        sourceHome: activeHome,
+        sourceUserData: deps.dataDir,
+        spawn: deps.ghost.spawn,
+        tmpRoot: ghostTmp
+      })
+
+      if (result.ok) {
+        stats.bump('ghosts')
+        log('[ghost] opened a ghost window')
+      }
+
+      return result
+    },
+
+    'ghost.panic': () => panic(),
+    'ghost.state': () => ({ canOpen: !ghostDir && Boolean(deps.ghost), ghost: ghostDir !== null, key: PANIC_KEY }),
     'guardian.enable': params => {
       settings.set({ guardian: asRecord(params).on === true })
 
@@ -453,14 +543,17 @@ export function createHermoso(deps: HermosoDeps) {
     async beforeQuit(): Promise<void> {
       stats.flush()
 
-      if (!teleport.needsQuitWait()) {
-        return
+      if (teleport.needsQuitWait()) {
+        await Promise.race([
+          teleport.home('quit').catch(() => {}),
+          new Promise<void>(resolve => setTimeout(resolve, QUIT_WAIT_MS).unref?.())
+        ])
       }
 
-      await Promise.race([
-        teleport.home('quit').catch(() => {}),
-        new Promise<void>(resolve => setTimeout(resolve, QUIT_WAIT_MS).unref?.())
-      ])
+      // A ghost leaves nothing: its folder is deleted as soon as its processes let go of it.
+      if (ghostDir) {
+        await wipeLater(ghostDir, ghostTmp, { spawn: deps.ghost?.spawn })
+      }
     },
 
     async call(method: string, params?: unknown): Promise<unknown> {
@@ -490,7 +583,8 @@ export function createHermoso(deps: HermosoDeps) {
       await bridge.stop()
     },
 
-    needsQuitWait: (): boolean => teleport.needsQuitWait(),
+    // main.ts runs beforeQuit() only when this says so: a ghost always has something to do on the way out.
+    needsQuitWait: (): boolean => ghostDir !== null || teleport.needsQuitWait(),
 
     /**
      * Before a backend starts for this Hermes home: the bridge is up, the plugin is installed and enabled, and the
@@ -501,6 +595,24 @@ export function createHermoso(deps: HermosoDeps) {
       let address: { token: string; url: string } | null = null
 
       startWatching()
+      activeHome = hermesHome
+
+      if (!ghostReady) {
+        ghostReady = true
+
+        if (ghostDir) {
+          if (deps.ghost?.registerPanicKey?.(PANIC_KEY, () => void panic()) === false) {
+            log(`[ghost] the panic key ${PANIC_KEY} could not be registered (another program holds it)`)
+          }
+        } else if (deps.ghost) {
+          // Ghost folders nobody owns any more (the computer went off in the middle of one) are forgotten.
+          const gone = sweepStale({ isAlive: deps.ghost.isAlive ?? pidAlive, tmpRoot: ghostTmp })
+
+          if (gone.length > 0) {
+            log(`[ghost] forgot ${gone.length} ghost folder(s) left behind`)
+          }
+        }
+      }
 
       try {
         address = await bridge.start()

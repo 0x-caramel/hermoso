@@ -81,6 +81,24 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   through `slash.exec` inside Hermes' own process: it calls the manager's SAFE restore (undo what Hermes wrote, delete
   what it created, keep what the person edited by hand), with the chat's own project folder bound by Hermes. Only a
   git-hash-shaped id is accepted and nothing can ask for the classic mode. The chat itself is left as it is.
+- **Ghost** (`ghost.ts`, glue in `index.ts`, window `ghost-panel.tsx` / `ghost-chip.tsx`): a window that keeps nothing. The
+  main window starts a SECOND Hermoso (`--hermoso-ghost`) whose Hermes home and app data live in a temporary folder of
+  its own (`<tmp>/hermoso-ghost-<12 hex>`), with only what it needs to talk to the model COPIED in (`config.yaml`,
+  `.env`, `auth.json`, and the VPN choice `vpn.json`); no chats, memories, logs, window state. Its chats, memories,
+  logs, snapshots and browser storage go there and nowhere else (the e2e greps both homes for a marker). The folder is
+  deleted by the panic key (`Ctrl+Alt+Shift+Backspace`, a global shortcut bound by the ghost only) or button, by an
+  ordinary close, and by a sweep at the next start of any Hermoso (a folder nobody owns and nobody touched for two
+  minutes). Every deletion is guarded by `isGhostDir`: a direct child of the temporary root, named like a ghost's, a real
+  folder; a path in an environment variable that merely looks like one can never wipe anything else. Said plainly in the
+  window: deleted is not shredded, the model's provider still sees what is sent, files the agent writes in a project
+  folder stay. Windows lessons that cost a day, kept here: libuv puts every non-detached child in a job that dies with
+  its parent, and PowerShell does nothing in a DETACHED_PROCESS (no console), so the cleaner is a hidden PowerShell
+  whose only job is `Start-Process` of the real one (a grandchild breaks away from the job and inherits none of the
+  ghost's open handles), and the quitting side WAITS for that first stage to end (`wipeLater` is async) before it
+  exits, or the helper dies with it; `main.ts` runs `beforeQuit()` only when `needsQuitWait()` says so, and a ghost
+  always does. From source the ghost is `electron <appPath> --hermoso-ghost` (decided by `app.isPackaged`, not by
+  `IS_PACKAGED`, which an environment variable can set); it keeps `--disable-gpu` / `--no-sandbox` from its parent.
+  `HERMOSO_GHOST_DEBUG_PORT` (a test's own environment) gives the ghost a debugging port so a spec can drive its window.
 - **Tool search**: Hermes defers a plugin's tools behind `tool_search` / `tool_describe` / `tool_call` and lists each
   by the first sentence of its description, clipped at 60 characters. Keep that sentence short and plain (a test
   keeps it). A `tool_call` is unwrapped before the hooks run, so `pre_tool_call` sees the real tool name.

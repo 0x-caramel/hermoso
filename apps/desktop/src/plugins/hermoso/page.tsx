@@ -7,6 +7,7 @@ import { Button, cn, useTheme, useValue } from '@hermes/plugin-sdk'
 import { IconPlugConnected } from '@tabler/icons-react'
 import { type ReactNode, useEffect } from 'react'
 
+import { GhostPanel } from './ghost-panel'
 import { GuardianPanel } from './guardian-panel'
 import { ShieldPanel } from './shield-panel'
 import { $agent, $allowed, loadAllowed, revokeAllowed } from './store'
@@ -108,6 +109,10 @@ export function HermosoPage() {
 
         <Section>
           <TimeMachinePanel />
+        </Section>
+
+        <Section>
+          <GhostPanel />
         </Section>
 
         <Section>

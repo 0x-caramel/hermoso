@@ -16,6 +16,7 @@ import {
   STATUSBAR_AREAS
 } from '@hermes/plugin-sdk'
 
+import { GhostChip } from './ghost-chip'
 import { HermosoPage } from './page'
 import { ShieldChip } from './shield-chip'
 import { startHermoso } from './store'
@@ -39,6 +40,12 @@ const plugin: HermesPlugin = {
         id: 'page',
         render: () => <HermosoPage />,
         title: STRINGS.nav
+      },
+      {
+        area: STATUSBAR_AREAS.right,
+        id: 'ghost',
+        order: 83,
+        render: () => <GhostChip />
       },
       {
         area: STATUSBAR_AREAS.right,

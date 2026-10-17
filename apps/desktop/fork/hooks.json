@@ -87,6 +87,11 @@
       "why": "Hermoso (Teleport, the agent bridge, the plugin installer) is created once, next to the VPN controller it works with (electron/hermoso/)"
     },
     {
+      "text": "registerPanicKey:",
+      "min": 1,
+      "why": "Ghost (a Hermoso window that keeps nothing) binds its panic key, starts a second app and quits at once through what only main.ts knows: the executable, whether it is packaged, globalShortcut and app.exit"
+    },
+    {
       "text": "beforeGate: () => hermoso.recover()",
       "min": 1,
       "why": "a Teleport trip left open by a crash is brought home BEFORE the VPN gate connects the tunnel, or the gate would connect in the foreign country"

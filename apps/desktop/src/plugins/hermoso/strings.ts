@@ -26,6 +26,27 @@ export const STRINGS = {
     description: 'Hermoso is asking whether the agent may do this.',
     once: 'Allow once'
   },
+  ghost: {
+    banner: 'This is a ghost window: nothing is kept.',
+    blurb:
+      'A window that keeps nothing. Its chats, memories and logs live in a temporary folder that is deleted when the window closes, on the panic key, or at the next start if the computer went off first.',
+    chipLabel: 'Ghost',
+    chipTitle: 'Ghost window: nothing is kept',
+    errors: {
+      'no-launch': 'The ghost window could not start.',
+      'no-setup': 'There is no model setup to copy yet. Set a model up first, then open a ghost.',
+      unavailable: 'A ghost can be opened from the main window only.'
+    } as Record<string, string>,
+    limits:
+      'Deleted is not shredded: a solid-state disk may keep traces. Your model’s provider still sees what you send it, and files the agent writes in a project folder stay there. Ghost keeps nothing of the conversation on this computer.',
+    open: 'Open a ghost window',
+    opened: 'The ghost window is opening…',
+    panic: 'Panic: delete everything and close',
+    panicHint: (key: string) => `Or press ${key} from anywhere.`,
+    title: 'Ghost',
+    whatItCopies:
+      'Your model setup, keys and VPN choice are copied into the temporary folder for the session, and deleted with it. Your own chats and memories are not.'
+  },
   guardian: {
     blurb: 'Before the agent does something that cannot be undone, Hermoso asks you, in this window, in plain words.',
     decisions: {

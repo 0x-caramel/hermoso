@@ -15356,6 +15356,17 @@ const hermoso = createHermoso({
   appVersion: app.getVersion(),
   dataDir: app.getPath('userData'),
   dialog,
+  // Ghost: a second Hermoso that keeps nothing. Only the app knows how it starts, quits at once and binds a key.
+  ghost: {
+    appPath: app.getAppPath(),
+    execPath: process.execPath,
+    exit: () => app.exit(0),
+    flags: process.argv.slice(1),
+    // The real property, not IS_PACKAGED (which an environment variable can set): it decides whether the executable
+    // IS the app (`Hermoso.exe`) or has to be told where the app is (`electron <path>`).
+    packaged: app.isPackaged,
+    registerPanicKey: (accelerator, handler) => globalShortcut.register(accelerator, handler)
+  },
   log: rememberLog,
   mullvad: mullvadClient,
   pluginSource: path.join(app.getAppPath(), 'assets', 'hermoso-plugin'),

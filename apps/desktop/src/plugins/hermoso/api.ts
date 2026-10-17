@@ -141,6 +141,18 @@ export interface RestoreResult {
   success?: boolean
 }
 
+/** Ghost, as main reports it: whether THIS window is a ghost, whether it can open one, and the panic key. */
+export interface GhostView {
+  canOpen: boolean
+  ghost: boolean
+  key: string
+}
+
+export const CALM_GHOST: GhostView = { canOpen: false, ghost: false, key: '' }
+
+export type GhostOpenResult =
+  { code: string; message: string; ok: false } | { dir: string; ok: true; pid: null | number }
+
 export type Route = 'lan' | 'loopback' | 'outside' | 'tunnel'
 
 export interface RadarConnection {
