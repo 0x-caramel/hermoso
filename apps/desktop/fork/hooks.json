@@ -80,6 +80,41 @@
       "text": "title: APP_NAME,",
       "min": 4,
       "why": "every window is titled with the app's own name (Hermoso), not a literal 'Hermes'"
+    },
+    {
+      "text": "createHermoso(",
+      "min": 1,
+      "why": "Hermoso (Teleport, the agent bridge, the plugin installer) is created once, next to the VPN controller it works with (electron/hermoso/)"
+    },
+    {
+      "text": "beforeGate: () => hermoso.recover()",
+      "min": 1,
+      "why": "a Teleport trip left open by a crash is brought home BEFORE the VPN gate connects the tunnel, or the gate would connect in the foreign country"
+    },
+    {
+      "text": "await hermoso.prepare(",
+      "min": 2,
+      "why": "the bridge is up and the plugin is installed in the Hermes home before each backend starts (runHermesStart, runPoolBackendStart)"
+    },
+    {
+      "text": "...hermoso.backendEnv()",
+      "min": 2,
+      "why": "the backend gets the bridge address and token, so the agent's plugin can reach the app"
+    },
+    {
+      "text": "'hermoso:call'",
+      "min": 1,
+      "why": "the one IPC channel every Hermoso feature uses"
+    },
+    {
+      "text": "hermoso.beforeQuit()",
+      "min": 1,
+      "why": "a machine that is away on a Teleport trip is brought home before the app quits"
+    },
+    {
+      "text": "hermoso.dispose()",
+      "min": 1,
+      "why": "the bridge is closed with the app"
     }
   ],
   "electron/preload.ts": [
@@ -87,6 +122,16 @@
       "text": "hermes:vpn:",
       "min": 8,
       "why": "the renderer bridge for the VPN IPC surface"
+    },
+    {
+      "text": "hermoso:call",
+      "min": 1,
+      "why": "the renderer's door to Hermoso (call)"
+    },
+    {
+      "text": "hermoso:event",
+      "min": 2,
+      "why": "the renderer's door to Hermoso (events pushed by main)"
     }
   ],
   "src/app/gateway/hooks/use-gateway-boot.ts": [
@@ -146,6 +191,20 @@
       "text": "__FORK_WORDMARK__",
       "min": 2,
       "why": "the intro wordmark: the fork's own name when the build defines it, 'HERMES AGENT' otherwise"
+    }
+  ],
+  "src/global.d.ts": [
+    {
+      "text": "hermoso: {",
+      "min": 1,
+      "why": "the typed surface of window.hermesDesktop.hermoso, used by the bundled Hermoso plugin (src/plugins/hermoso/)"
+    }
+  ],
+  "src/plugins/hermoso/plugin.tsx": [
+    {
+      "text": "const plugin: HermesPlugin",
+      "min": 1,
+      "why": "the Hermoso window plugin: a bundled plugin the app discovers by itself (nothing upstream registers it); if upstream moves the plugin door this is what to port"
     }
   ]
 }

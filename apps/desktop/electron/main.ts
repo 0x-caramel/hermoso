@@ -303,6 +303,8 @@ import {
   tightenSecretFileMode,
   writeSecretFileAtomic
 } from './hardening'
+import { createHermoso } from './hermoso'
+import { createHermesRunner } from './hermoso/run-hermes'
 import {
   type AttachedBackend,
   attachOrReserveSpawn,
@@ -12547,6 +12549,9 @@ async function runPoolBackendStart(
   )
   rememberLog(`Starting Hermes backend for profile "${profile}" via ${backend.label}`)
 
+  // Hermoso: the bridge is up and the plugin is installed in this profile's home before its backend starts.
+  await hermoso.prepare(profile === 'default' ? HERMES_HOME : path.join(HERMES_HOME, 'profiles', profile))
+
   const parentStartMarker = await desktopParentStartMarker()
   const backendNonce = crypto.randomBytes(16).toString('hex')
   const parentIdentityEnv = parentWatchdogEnv(process.pid, parentStartMarker, backendNonce)
@@ -12563,6 +12568,7 @@ async function runPoolBackendStart(
           ...profileBackendParentEnv({ hermesHome: HERMES_HOME, profile }),
           HERMES_HOME,
           ...backend.env,
+          ...hermoso.backendEnv(),
           // Pin the gateway's tool/terminal cwd to the same directory we chose for
           // the child process. Inherited TERMINAL_CWD (or a stale config bridge)
           // can still point at the install dir even when spawn cwd is home.
@@ -13452,6 +13458,9 @@ async function runHermesStart({ supervisorRecovery = false }: { supervisorRecove
     await advanceBootProgress('backend.spawn', `Starting Hermes backend via ${backend.label}`, 84)
     rememberLog(`Starting Hermes backend via ${backend.label}`)
 
+    // Hermoso: the bridge is up and the plugin is installed in this home before the backend starts.
+    await hermoso.prepare(HERMES_HOME)
+
     const profile = primaryProfile
     const parentStartMarker = await desktopParentStartMarker()
     const backendNonce = crypto.randomBytes(16).toString('hex')
@@ -13478,6 +13487,7 @@ async function runHermesStart({ supervisorRecovery = false }: { supervisorRecove
             // can't reliably do that, so we set it inline for every spawn.
             HERMES_HOME,
             ...backend.env,
+            ...hermoso.backendEnv(),
             TERMINAL_CWD: hermesCwd,
             HERMES_DASHBOARD_SESSION_TOKEN: token,
             // Marks this dashboard backend as desktop-spawned so it runs the cron
@@ -15331,12 +15341,40 @@ function broadcastVpnState(state) {
   }
 }
 
+const mullvadClient = createMullvadClient()
+
 const vpn = createVpnController({
-  client: createMullvadClient(),
+  // Hermoso: a trip left open by a crash is brought home before the gate connects the tunnel.
+  beforeGate: () => hermoso.recover(),
+  client: mullvadClient,
   log: rememberLog,
   onState: broadcastVpnState,
   readSettings: readVpnSettings,
   writeSettings: writeVpnSettings
+})
+
+// Hermoso: Teleport, the agent's bridge and plugin, and the call surface of the app's windows (electron/hermoso/).
+const hermoso = createHermoso({
+  broadcast: (channel, payload) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.webContents.isDestroyed()) {
+        win.webContents.send(channel, payload)
+      }
+    }
+  },
+  dataDir: app.getPath('userData'),
+  log: rememberLog,
+  mullvad: mullvadClient,
+  pluginSource: path.join(app.getAppPath(), 'assets', 'hermoso-plugin'),
+  runHermes: createHermesRunner({
+    cwd: () => ACTIVE_HERMES_ROOT,
+    python: () => {
+      const python = uninstallVenvPython()
+
+      return fileExists(python) ? python : null
+    }
+  }),
+  vpn
 })
 
 // While the startup gate is closed, nothing the app's own network stack would send to the
@@ -18358,6 +18396,7 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
   killTimedGitChildren()
   vpn.dispose()
+  void hermoso.dispose()
   sshIsolatedKeepalives.stopAll()
   destroyKeepaliveAgents()
   nativeNotifications.dispose()
@@ -18506,6 +18545,8 @@ ipcMain.handle('hermes:vpn:settings:set', (_event, patch) =>
 )
 ipcMain.handle('hermes:vpn:disconnect', () => vpn.disconnect())
 ipcMain.handle('hermes:vpn:relays:list', () => vpn.listRelays())
+// Hermoso: one channel for every Hermoso feature (electron/hermoso/index.ts).
+ipcMain.handle('hermoso:call', (_event, method, params) => hermoso.call(String(method), params))
 ipcMain.handle('hermes:vpn:open-app', async () => {
   const appPath = vpn.findApp()
 
@@ -19827,6 +19868,11 @@ app.on('before-quit', event => {
 
   if (sshNeedsWait) {
     teardownTasks.push({ run: teardownSshForQuit, waitForCompletion: true })
+  }
+
+  // Hermoso: a machine that is away on a Teleport trip is brought home before the app goes.
+  if (hermoso.needsQuitWait()) {
+    teardownTasks.push({ run: (): Promise<void> => hermoso.beforeQuit(), waitForCompletion: true })
   }
 
   if (quitTeardown.begin(teardownTasks)) {

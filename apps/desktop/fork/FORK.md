@@ -8,6 +8,7 @@ Everything that is not upstream's lives in `apps/desktop/fork/` or in a short li
 | --- | --- | --- |
 | **VPN gate** | Connects Mullvad on launch and holds the backend start until the tunnel is up; an egress gate holds every external request of the app until then; boot card, Settings → VPN, statusbar chip | `electron/mullvad.ts`, `vpn-controller.ts`, `egress-gate.ts`, `src/store/vpn.ts`, `src/components/vpn-gate-overlay.tsx`, `src/app/settings/vpn-settings.tsx`; invariants in `AGENTS.md` |
 | **Own identity** | Its own name (Hermoso), executable (`Hermoso.exe`), AppUserModelID (`com.hermoso.desktop`) and wordmark, so Windows gives it its own taskbar button and icon instead of folding it into the official Hermes | `fork/identity.json` (read by every script through `fork/identity.cjs`), `fork/identity-override.cjs`, `electron/main.ts` (a few lines), `vite.config.ts`, `fork/install-shortcut.ps1` |
+| **Teleport** | Change the Mullvad exit country for a while (a chip in the status bar for the person, the `hermoso_teleport` tool for the agent, which the person approves every time), and come back by itself: the way home is written down before anything moves, survives a crash and a quit | `electron/hermoso/teleport.ts` (+ `index.ts`, `bridge.ts`, `plugin-install.ts`), `assets/hermoso-plugin/` (the agent's side), `src/plugins/hermoso/` (the window's side) |
 | **Logo** | The brother's portrait, on the very tiles of the official logo: black ink on a white tile (light) and on a black tile with a white halo (dark), at the size and position of every official image. The official install is untouched | `fork/brand/hermoso.py`, `fork/brand/hermoso/source.png` (+ the generated images, in the `brand:` commit) |
 
 Start it from the Start Menu: **Hermoso**. The official **Hermes** shortcut keeps starting the
@@ -19,6 +20,41 @@ stamps the bundle with the *official* commit the fork sits on instead of the for
 the app's bundle-skew banner (desktop older than the backend after an official update) and the
 first-launch bootstrap both read that stamp, and an unknown commit would silence the banner for
 good. The banner is the fork's reminder to run `sync.mjs`.
+
+## How Hermoso's powers are built
+
+Three parts that only talk through narrow doors, so an upstream update has little to break:
+
+```
+ window plugin                 main process                           agent's backend
+ src/plugins/hermoso/  <--->   electron/hermoso/                <--->  assets/hermoso-plugin/ (Python)
+ (a bundled desktop plugin:    createHermoso(): Teleport, the         installed into <hermes home>/plugins/hermoso
+  status-bar chip, page,       bridge, the plugin installer           by main before each backend starts;
+  sidebar row, command)        one IPC channel: hermoso:call          inert unless main started the backend
+```
+
+- **Main** owns the machine: the Mullvad tunnel, the trip file (`userData/hermoso/teleport.json`), the timers.
+  `teleport.ts` is Electron-free and testable with a fake Mullvad (`fake-daemon.ts`).
+- **The bridge** (`bridge.ts`) is a loopback HTTP door for the plugin: 127.0.0.1 on a port the system picks, a fresh
+  256-bit bearer token handed only to backends this app starts (environment), no browsers (no `Origin`, `Host` must
+  be loopback), JSON only. The plugin is a client: it never touches Mullvad.
+- **The plugin** (`assets/hermoso-plugin/`, shipped inside the app) registers four tools and a `pre_tool_call` hook that
+  sends every teleport to Hermes' human approval gate. `plugin-install.ts` copies it into each Hermes home (and lists
+  it under `plugins.enabled`, once, with a comment-preserving YAML edit; `hermes plugins enable` is the fallback). A
+  person who later switches it off in Capabilities -> Plugins is not overruled. In any backend this app did not start
+  (the official Hermes sharing the data folder) it stays inert.
+- **The window plugin** is a bundled desktop plugin: nothing upstream registers it, the app finds
+  `src/plugins/*/plugin.tsx` by itself. Strings live in `strings.ts`, not in the app's language files.
+- The VPN controller gets two small additions for it: `beforeGate` (a crashed trip is brought home before the gate
+  connects) and `holdTransition` (a planned reconnect is not shown as a dropped VPN).
+
+Hooks into upstream files are listed in `hooks.json` and checked by `sync.mjs`. Tests: `npx vitest run electron/hermoso
+src/plugins/hermoso`, `python -B fork/plugin-tests/test_hermoso_plugin.py`, and `hermes plugins doctor
+apps/desktop/assets/hermoso-plugin` (Hermes' own loader; run it with `HERMOSO_BRIDGE_URL=http://127.0.0.1:1` and
+`HERMOSO_BRIDGE_TOKEN=x` set to see the four tools and the hook register).
+
+**Real-Mullvad rule for whoever tests this:** the machine's Mullvad settings are the person's. Read `mullvad relay get`
+and `mullvad status` first, and put exactly that back at the end (`Location`, multihop, connected or not).
 
 ## Two forks, one set of tools
 

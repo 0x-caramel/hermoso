@@ -267,6 +267,16 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return () => ipcRenderer.removeListener('hermes:vpn:state', listener)
     }
   },
+  // Hermoso: one call surface and one event stream for every Hermoso feature (electron/hermoso/index.ts).
+  hermoso: {
+    call: (method, params) => ipcRenderer.invoke('hermoso:call', method, params),
+    onEvent: callback => {
+      const listener = (_event, payload) => callback(payload)
+      ipcRenderer.on('hermoso:event', listener)
+
+      return () => ipcRenderer.removeListener('hermoso:event', listener)
+    }
+  },
   getBootProgress: () => ipcRenderer.invoke('hermes:boot-progress:get'),
   getConnectionConfig: profile => ipcRenderer.invoke('hermes:connection-config:get', profile),
   saveConnectionConfig: payload => ipcRenderer.invoke('hermes:connection-config:save', payload),

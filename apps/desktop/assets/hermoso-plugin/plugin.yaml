@@ -1,0 +1,11 @@
+name: hermoso
+version: 0.1.0
+description: "Hermoso's protection for the agent: Teleport (change the Mullvad exit country on request, with the user's approval, and come back by itself). Talks to the Hermoso desktop app over a local, token-protected bridge; does nothing when the backend was not started by Hermoso."
+author: "Hermoso"
+provides_tools:
+  - hermoso_teleport
+  - hermoso_return_home
+  - hermoso_where_am_i
+  - hermoso_exits
+provides_hooks:
+  - pre_tool_call

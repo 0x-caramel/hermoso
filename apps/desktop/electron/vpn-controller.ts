@@ -108,6 +108,11 @@ type VpnClient = Pick<
 >
 
 export interface VpnControllerDeps {
+  /**
+   * Awaited before the gate reads or changes anything. Hermoso uses it to bring a trip left open by a
+   * crash (a Mullvad exit still in another country) home before the gate connects there.
+   */
+  beforeGate?: () => Promise<void>
   client: VpnClient
   /** How long a connect may take before the gate gives up. */
   connectTimeoutMs?: number
@@ -175,6 +180,9 @@ export function createVpnController(deps: VpnControllerDeps) {
   let monitor: null | ReturnType<typeof setInterval> = null
   let relayCache: null | RelayCountry[] = null
   let disposed = false
+  // Planned tunnel transitions in progress (a Teleport reconnect): while any is, a tunnel that is not
+  // up is the plan, not a dropped VPN, so it is not published.
+  let transitionHolds = 0
 
   // One-way latch: open from the start when the VPN is not required, otherwise closed
   // until the tunnel is first up or the requirement is waived. See the module doc.
@@ -269,6 +277,9 @@ export function createVpnController(deps: VpnControllerDeps) {
   }
 
   async function runGate(): Promise<VpnState> {
+    // Never lets the gate fail: whatever has to happen first must not be able to keep the tunnel down.
+    await deps.beforeGate?.().catch(error => log(`[vpn] pre-gate step failed: ${String(error?.message ?? error)}`))
+
     const settings = deps.readSettings()
 
     if (!settings.enabled) {
@@ -412,6 +423,11 @@ export function createVpnController(deps: VpnControllerDeps) {
   async function refresh(): Promise<VpnState> {
     const polled = await client.status()
 
+    // A planned reconnect (Teleport) is not a drop: keep showing the tunnel as it was until it is up again.
+    if (transitionHolds > 0 && polled.status?.state !== 'connected') {
+      return state
+    }
+
     if (!polled.status) {
       return publish({ cliFound: polled.failure !== 'not-installed', tunnel: 'unknown' })
     }
@@ -500,6 +516,24 @@ export function createVpnController(deps: VpnControllerDeps) {
     return publish({ waived: true })
   }
 
+  /**
+   * Announce a tunnel change that is on purpose (Teleport moves the exit country, which reconnects).
+   * Returns the function that ends the announcement; until then a tunnel that is momentarily not up
+   * is not published as a drop. Holds nest.
+   */
+  function holdTransition(): () => void {
+    let released = false
+
+    transitionHolds += 1
+
+    return () => {
+      if (!released) {
+        released = true
+        transitionHolds = Math.max(0, transitionHolds - 1)
+      }
+    }
+  }
+
   function startMonitor(): void {
     if (monitor) {
       return
@@ -532,6 +566,7 @@ export function createVpnController(deps: VpnControllerDeps) {
     ensure,
     findApp: () => client.findApp(),
     getState: (): VpnState => state,
+    holdTransition,
     isStartupReleased: (): boolean => startupReleased,
     listRelays,
     refresh,

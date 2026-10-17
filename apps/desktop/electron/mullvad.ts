@@ -240,6 +240,180 @@ export function parseRelayList(output: string): RelayCountry[] {
   return countries.filter(country => country.cities.length > 0)
 }
 
+/**
+ * Where the tunnel exits, in the vocabulary of `mullvad relay set location`: nothing narrower than a
+ * country is ever invented here, only what `mullvad relay get` printed (see parseRelayConstraints).
+ */
+export type RelayLocation =
+  | { city: string; country: string; hostname: string; kind: 'hostname' }
+  | { city: string; country: string; kind: 'city' }
+  | { country: string; kind: 'country' }
+  | { kind: 'any' }
+
+export interface RelayConstraints {
+  /** `null` when the CLI printed a form we do not know how to put back (a custom list, a newer dialect). */
+  location: null | RelayLocation
+  /** The `Location:` value exactly as printed, for logs and for a "go back to" label. */
+  locationText: string
+}
+
+const LOCATION_LINE = /^\s*Location:\s*(.*?)\s*$/im
+const COUNTRY_CODE = /^[a-z]{2}$/
+const CITY_CODE = /^[a-z0-9]{2,5}$/
+const RELAY_HOSTNAME = /^[a-z]{2}-[a-z0-9]{2,5}-[a-z0-9]+-\d+$/
+
+/**
+ * `mullvad relay get` → the exit location constraint (the one `relay set location` changes). Forms
+ * observed on mullvad-cli 2026.5:
+ *
+ *   any · country no · city got, se · city got, se, hostname se-got-wg-004
+ *
+ * `null` means the output has no `Location:` line at all (not a relay answer); a line we cannot
+ * read gives `{ location: null }` so the caller can refuse to move away from something it could
+ * not put back.
+ */
+export function parseRelayConstraints(output: string): null | RelayConstraints {
+  const match = LOCATION_LINE.exec(String(output ?? '').replace(/\r\n?/g, '\n'))
+
+  if (!match) {
+    return null
+  }
+
+  const text = match[1].trim()
+  const lower = text.toLowerCase()
+
+  if (lower === 'any') {
+    return { location: { kind: 'any' }, locationText: text }
+  }
+
+  const country = /^country\s+([a-z]{2})$/.exec(lower)
+
+  if (country) {
+    return { location: { country: country[1], kind: 'country' }, locationText: text }
+  }
+
+  const city = /^city\s+([a-z0-9]{2,5})\s*,\s*([a-z]{2})(?:\s*,\s*hostname\s+([a-z0-9-]+))?$/.exec(lower)
+
+  if (city) {
+    const [, cityCode, countryCode, hostname] = city
+
+    if (!hostname) {
+      return { location: { city: cityCode, country: countryCode, kind: 'city' }, locationText: text }
+    }
+
+    return RELAY_HOSTNAME.test(hostname)
+      ? { location: { city: cityCode, country: countryCode, hostname, kind: 'hostname' }, locationText: text }
+      : { location: null, locationText: text }
+  }
+
+  return { location: null, locationText: text }
+}
+
+/** The arguments that follow `mullvad relay set location` for this location. */
+export function relayLocationArgs(location: RelayLocation): string[] {
+  switch (location.kind) {
+    case 'any':
+      return ['any']
+
+    case 'country':
+      return [location.country]
+
+    case 'city':
+      return [location.country, location.city]
+
+    case 'hostname':
+      return [location.country, location.city, location.hostname]
+  }
+}
+
+/** A valid location out of a country (and optionally a city) code, or null when either is malformed. */
+export function relayLocationFromCodes(country: string, city?: null | string): null | RelayLocation {
+  const countryCode = String(country ?? '')
+    .trim()
+    .toLowerCase()
+
+  const cityCode = String(city ?? '')
+    .trim()
+    .toLowerCase()
+
+  if (!COUNTRY_CODE.test(countryCode)) {
+    return null
+  }
+
+  if (!cityCode) {
+    return { country: countryCode, kind: 'country' }
+  }
+
+  return CITY_CODE.test(cityCode) ? { city: cityCode, country: countryCode, kind: 'city' } : null
+}
+
+export function sameRelayLocation(a: null | RelayLocation, b: null | RelayLocation): boolean {
+  return a !== null && b !== null && JSON.stringify(relayLocationArgs(a)) === JSON.stringify(relayLocationArgs(b))
+}
+
+/** What `mullvad status --json` says about the tunnel. Never carries an IP address. */
+export interface MullvadStatusDetails {
+  city: null | string
+  country: null | string
+  /** Entry relay when multihop is on. */
+  entryHostname: null | string
+  /** Exit relay (`se-got-wg-001`): its two-letter prefix is the country the traffic leaves from. */
+  hostname: null | string
+  state: MullvadTunnelState
+  /** The tunnel's network interface name (`Mullvad`), which the connection radar matches addresses to. */
+  tunnelInterface: null | string
+}
+
+const JSON_STATES: Record<string, MullvadTunnelState> = {
+  connected: 'connected',
+  connecting: 'connecting',
+  disconnected: 'disconnected',
+  disconnecting: 'disconnecting',
+  error: 'blocked'
+}
+
+function jsonText(value: unknown): null | string {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+/**
+ * `mullvad status --json` → typed details. Same rule as parseMullvadStatus for an EMPTY answer
+ * (the daemon prints nothing for a couple of seconds while a relay change reconnects): a tunnel on
+ * its way up, never `unknown`. Text that is not JSON is `unknown` and never throws.
+ */
+export function parseMullvadStatusJson(output: string): MullvadStatusDetails {
+  const none = { city: null, country: null, entryHostname: null, hostname: null, tunnelInterface: null }
+  const text = String(output ?? '').trim()
+
+  if (text === '') {
+    return { ...none, state: 'connecting' }
+  }
+
+  try {
+    const root = JSON.parse(text) as { details?: Record<string, any>; state?: unknown }
+    const state = JSON_STATES[String(root.state ?? '').toLowerCase()] ?? 'unknown'
+    const location = root.details?.location ?? {}
+    const endpoint = root.details?.endpoint ?? {}
+    const up = state === 'connected'
+
+    return {
+      city: jsonText(location.city),
+      country: jsonText(location.country),
+      entryHostname: up ? (jsonText(location.entry_hostname)?.toLowerCase() ?? null) : null,
+      hostname: up ? (jsonText(location.hostname)?.toLowerCase() ?? null) : null,
+      state,
+      tunnelInterface: up ? jsonText(endpoint.tunnel_interface) : null
+    }
+  } catch {
+    return { ...none, state: 'unknown' }
+  }
+}
+
+/** The country code an exit relay hostname starts with (`no-osl-wg-001` → `no`). */
+export function relayHostCountry(hostname: null | string): null | string {
+  return /^([a-z]{2})-/.exec(String(hostname ?? '').toLowerCase())?.[1] ?? null
+}
+
 /** Classify why a CLI call failed, from its spawn error and stderr. */
 export function classifyCliFailure(result: CliResult): MullvadFailure {
   if (result.error === 'missing') {
@@ -427,9 +601,38 @@ export function createMullvadClient({
       return result.code === 0 ? parseRelayList(result.stdout) : []
     },
 
+    /** The exit location constraint, or the failure that prevented reading it. Exactly one is non-null. */
+    async relayGet(): Promise<{ constraints: null | RelayConstraints; failure: MullvadFailure | null }> {
+      const result = await exec(['relay', 'get'], STATUS_TIMEOUT_MS)
+
+      if (result.code !== 0) {
+        return { constraints: null, failure: classifyCliFailure(result) }
+      }
+
+      const constraints = parseRelayConstraints(result.stdout)
+
+      return constraints ? { constraints, failure: null } : { constraints: null, failure: 'failed' }
+    },
+
+    /** Put an exact exit location (as `relayGet` read it) back, whatever its kind. */
+    setRelayLocation(location: RelayLocation): Promise<CliResult> {
+      return exec(['relay', 'set', 'location', ...relayLocationArgs(location)], COMMAND_TIMEOUT_MS)
+    },
+
     /** Country/city codes as `mullvad relay list` prints them; null country = leave Mullvad's choice alone. */
     setLocation(country: string, city: null | string): Promise<CliResult> {
       return exec(['relay', 'set', 'location', country, ...(city ? [city] : [])], COMMAND_TIMEOUT_MS)
+    },
+
+    /** The tunnel in detail (exit relay, interface) from `status --json`; exactly one of the two is non-null. */
+    async statusDetails(): Promise<{ details: MullvadStatusDetails | null; failure: MullvadFailure | null }> {
+      const result = await exec(['status', '--json'], STATUS_TIMEOUT_MS)
+
+      if (result.code !== 0) {
+        return { details: null, failure: classifyCliFailure(result) }
+      }
+
+      return { details: parseMullvadStatusJson(result.stdout), failure: null }
     },
 
     /** Current tunnel state, or the failure that prevented reading it. Exactly one is non-null. */

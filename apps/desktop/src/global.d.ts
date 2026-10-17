@@ -209,6 +209,11 @@ declare global {
         openApp: () => Promise<{ opened: 'app' | 'download' }>
         onState: (callback: (state: VpnState) => void) => () => void
       }
+      // Hermoso: one call surface and one event stream for every Hermoso feature (see src/plugins/hermoso/).
+      hermoso: {
+        call: (method: string, params?: unknown) => Promise<unknown>
+        onEvent: (callback: (payload: unknown) => void) => () => void
+      }
       getBootProgress: () => Promise<DesktopBootProgress>
       getConnectionConfig: (profile?: null | string) => Promise<DesktopConnectionConfig>
       saveConnectionConfig: (payload: DesktopConnectionConfigInput) => Promise<DesktopConnectionConfig>

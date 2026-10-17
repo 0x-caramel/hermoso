@@ -459,8 +459,16 @@ const FORK_UNIT_TESTS = [
   'electron/egress-gate.test.ts',
   'electron/fork-update.test.ts',
   'src/store/vpn.test.ts',
-  'src/components/vpn-gate-overlay.test.tsx'
+  'src/components/vpn-gate-overlay.test.tsx',
+  // Hermoso (path filters: every test file under them): Teleport, the bridge, the plugin installer, the window plugin
+  'electron/mullvad-relay.test.ts',
+  'electron/vpn-controller-hold.test.ts',
+  'electron/hermoso',
+  'src/plugins/hermoso'
 ]
+
+// The Python half of Hermoso (the agent's plugin); only a fork that has it runs it.
+const PLUGIN_TESTS = path.join(DESKTOP, 'fork', 'plugin-tests', 'test_hermoso_plugin.py')
 
 function depsChanged(oldBase, target) {
   return (
@@ -812,6 +820,10 @@ function replayAndVerify({ base, options, stack, target }) {
           'fork/update.test.mjs, fork/tail.test.mjs'
         )
       )
+
+      if (fs.existsSync(PLUGIN_TESTS)) {
+        step('hermoso plugin tests (python)', () => mustSucceed(sh('python', ['-B', PLUGIN_TESTS]), 'fork/plugin-tests'))
+      }
     }
 
     if (needsBuild) {
