@@ -69,6 +69,18 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   test table of what must be caught AND what everyday commands must not be. With no app to ask the plugin does
   nothing; an app that stops answering after it was there means the risky action is refused. `stats.json` keeps
   counters and the last decisions (also the memory behind Aura), `settings.json` what the person switched.
+- **Time Machine** (`timemachine.py`; app side `index.ts`, `settings.ts`; window `timemachine-panel.tsx`): Hermes' own
+  checkpoint manager snapshots the project folder just before the agent first changes a file in a turn (a shadow git
+  store under the Hermes home, outside the project; it refuses folders that are too broad and caps files at 10 MB). It
+  is off unless asked, and the desktop's backend is asked by ONE environment variable it reads when it starts
+  (`HERMES_TUI_CHECKPOINTS`, not the config file), so Hermoso sets it in the app's environment before any backend
+  spawns (unless the person set their own) and edits nothing of theirs; the switch is Hermoso's own setting and a change
+  applies from the next start. The page lists the open chat's snapshots through the gateway's `rollback.list` and shows
+  the changes through `rollback.diff`. The gateway's own `rollback.restore` is the CLASSIC restore (it leaves the files
+  the agent created), so the rewind is the plugin's slash command `/hermoso-rewind <snapshot>`, run for the open chat
+  through `slash.exec` inside Hermes' own process: it calls the manager's SAFE restore (undo what Hermes wrote, delete
+  what it created, keep what the person edited by hand), with the chat's own project folder bound by Hermes. Only a
+  git-hash-shaped id is accepted and nothing can ask for the classic mode. The chat itself is left as it is.
 - **Tool search**: Hermes defers a plugin's tools behind `tool_search` / `tool_describe` / `tool_call` and lists each
   by the first sentence of its description, clipped at 60 characters. Keep that sentence short and plain (a test
   keeps it). A `tool_call` is unwrapped before the hooks run, so `pre_tool_call` sees the real tool name.

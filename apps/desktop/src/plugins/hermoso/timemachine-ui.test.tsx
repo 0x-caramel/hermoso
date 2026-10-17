@@ -4,13 +4,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CALM_TIME_MACHINE, type RestoreResult, type Snapshot, type SnapshotDiff, type SnapshotList } from './api'
 import { HermosoPage } from './page'
-import { $timeMachine, loadTimeMachine, startHermoso } from './store'
+import { $timeMachine, loadTimeMachine, parseRewindOutput, startHermoso } from './store'
 import { summaryOf, TimeMachinePanel, whenText } from './timemachine-panel'
 
 const SNAPSHOTS: Snapshot[] = [
   { hash: 'bbbb2222', message: 'auto: before write_file', timestamp: '2026-10-17T12:30:00+02:00' },
   { hash: 'aaaa1111', message: 'auto: before patch', timestamp: '2026-10-17T11:00:00+02:00' }
 ]
+
+const RESTORED: RestoreResult = {
+  reason: 'before patch',
+  restored_files: ['a.txt', 'b.txt'],
+  restored_to: 'aaaa1111',
+  skipped_user_edits: ['mine.txt'],
+  success: true
+}
 
 type Atom = { set: (value: unknown) => void }
 
@@ -39,25 +47,30 @@ function installBridge(answers: Record<string, unknown> = {}) {
   return { call, emit: (payload: unknown) => act(() => listeners.forEach(listener => listener(payload))) }
 }
 
+/** The gateway as the panel sees it: the snapshots and the diff are Hermes' own RPCs, the rewind is the plugin's command. */
 function gateway(
   options: {
-    diff?: SnapshotDiff | Error
+    diff?: Error | SnapshotDiff
     list?: Error | SnapshotList
-    restore?: Error | RestoreResult
+    /** What `/hermoso-rewind` prints (a result as JSON, or any text), or an error from the gateway. */
+    rewind?: Error | RestoreResult | string
   } = {}
 ) {
   const request = vi.spyOn(host, 'request').mockImplementation((async (method: string) => {
+    if (method === 'slash.exec') {
+      const said = options.rewind ?? RESTORED
+
+      if (said instanceof Error) {
+        throw said
+      }
+
+      return { output: typeof said === 'string' ? said : JSON.stringify(said) }
+    }
+
     const answer =
       method === 'rollback.list'
         ? (options.list ?? { checkpoints: SNAPSHOTS, enabled: true })
-        : method === 'rollback.diff'
-          ? (options.diff ?? { diff: '+hello\n', stat: ' a.txt | 1 +' })
-          : (options.restore ?? {
-              history_removed: 2,
-              restore: ['a.txt', 'b.txt'],
-              skipped_user_edits: ['c.txt'],
-              success: true
-            })
+        : (options.diff ?? { diff: '+hello\n', stat: ' a.txt | 1 +' })
 
     if (answer instanceof Error) {
       throw answer
@@ -74,14 +87,12 @@ function gateway(
 beforeEach(() => {
   $timeMachine.set({ active: true, enabled: true })
   setAtom(host.state.activeSessionId, 'rt1')
-  setAtom(host.state.focusedStoredSessionId, 'stored1')
 })
 
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
   setAtom(host.state.activeSessionId, null)
-  setAtom(host.state.focusedStoredSessionId, null)
   $timeMachine.set(CALM_TIME_MACHINE)
   delete (window as unknown as { hermesDesktop?: unknown }).hermesDesktop
 })
@@ -102,6 +113,22 @@ describe('the time machine in the store', () => {
     $timeMachine.set(CALM_TIME_MACHINE)
     startHermoso()
     await waitFor(() => expect($timeMachine.get().active).toBe(true))
+  })
+
+  it('reads what the rewind command printed: the last line as JSON, or whatever Hermes said as a failure', () => {
+    expect(parseRewindOutput(JSON.stringify(RESTORED))).toEqual(RESTORED)
+    expect(parseRewindOutput(`noise\n${JSON.stringify({ error: 'x', success: false })}\n`)).toEqual({
+      error: 'x',
+      success: false
+    })
+    expect(parseRewindOutput('Unknown command: /hermoso-rewind')).toEqual({
+      error: 'Unknown command: /hermoso-rewind',
+      success: false
+    })
+    expect(parseRewindOutput('{"nonsense":1}')).toEqual({ error: '{"nonsense":1}', success: false })
+    expect(parseRewindOutput('')).toEqual({ error: 'Hermes did not answer.', success: false })
+    expect(parseRewindOutput(undefined)).toEqual({ error: 'Hermes did not answer.', success: false })
+    expect(parseRewindOutput('x'.repeat(500)).error).toHaveLength(200)
   })
 })
 
@@ -227,12 +254,14 @@ describe('rewinding', () => {
     const confirm = within(first).getByTestId('timemachine-confirm')
 
     expect(confirm.textContent).toContain('Everything the agent changed after that is undone')
+    expect(confirm.textContent).toContain('Files you edited yourself are kept')
+    expect(confirm.textContent).toContain('The chat is left as it is')
     fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
     expect(within(first).queryByTestId('timemachine-confirm')).toBeNull()
-    expect(request.mock.calls.some(call => call[0] === 'rollback.restore')).toBe(false)
+    expect(request.mock.calls.some(call => call[0] === 'slash.exec')).toBe(false)
   })
 
-  it('puts the project back, says what was done, keeps the person’s own edits, refreshes the chat, and is counted', async () => {
+  it('puts the files back through the plugin’s own safe command, says what was done, keeps the person’s edits, and is counted', async () => {
     const bridge = installBridge()
     const { openSession, request } = gateway()
 
@@ -244,33 +273,31 @@ describe('rewinding', () => {
     fireEvent.click(within(second).getByRole('button', { name: 'Rewind' }))
 
     expect((await screen.findByTestId('timemachine-note')).textContent).toBe(
-      'Rewound: 2 files put back. 1 file you changed yourself was kept. The chat went back to that point too.'
+      'Rewound: 2 files put back. 1 file you changed yourself was kept. The chat was left as it is, so the agent still knows what it did: tell it the files are back.'
     )
-    expect(request).toHaveBeenCalledWith('rollback.restore', { hash: 'aaaa1111', session_id: 'rt1' })
-    expect(openSession).toHaveBeenCalledWith('stored1', { refreshInPlace: true })
+    expect(request).toHaveBeenCalledWith('slash.exec', { command: '/hermoso-rewind aaaa1111', session_id: 'rt1' })
+    expect(request.mock.calls.some(call => call[0] === 'rollback.restore')).toBe(false)
+    expect(openSession).not.toHaveBeenCalled()
     expect(bridge.call).toHaveBeenCalledWith('timemachine.rewound', undefined)
     expect(request.mock.calls.filter(call => call[0] === 'rollback.list').length).toBeGreaterThanOrEqual(2)
   })
 
-  it('does not refresh the chat when no message went with it', async () => {
+  it('says when files could not be removed', async () => {
     installBridge()
-
-    const { openSession } = gateway({ restore: { history_removed: 0, restore: ['a.txt'], success: true } })
-
+    gateway({ rewind: { ...RESTORED, failed_deletes: ['locked.txt'], skipped_user_edits: [] } })
     render(<TimeMachinePanel />)
 
     const first = (await screen.findByTestId('timemachine-list')).querySelector('li') as HTMLElement
 
     fireEvent.click(within(first).getByRole('button', { name: 'Rewind to here' }))
     fireEvent.click(within(first).getByRole('button', { name: 'Rewind' }))
-    expect((await screen.findByTestId('timemachine-note')).textContent).toBe('Rewound: 1 file put back.')
-    expect(openSession).not.toHaveBeenCalled()
+    expect((await screen.findByTestId('timemachine-note')).textContent).toContain('1 file could not be removed.')
   })
 
-  it('says why when Hermes refuses (the agent is working, say), and counts nothing', async () => {
+  it('says why when Hermes refuses, and counts nothing', async () => {
     const bridge = installBridge()
 
-    gateway({ restore: new Error('rollback restore is not allowed while the agent is working') })
+    gateway({ rewind: { error: "Checkpoint 'aaaa1111' not found", success: false } })
     render(<TimeMachinePanel />)
 
     const first = (await screen.findByTestId('timemachine-list')).querySelector('li') as HTMLElement
@@ -280,14 +307,38 @@ describe('rewinding', () => {
 
     const note = await screen.findByTestId('timemachine-note')
 
-    expect(note.textContent).toBe('It was not rewound: rollback restore is not allowed while the agent is working')
+    expect(note.textContent).toBe("It was not rewound: Checkpoint 'aaaa1111' not found")
     expect(note.getAttribute('role')).toBe('alert')
     expect(bridge.call.mock.calls.some(call => call[0] === 'timemachine.rewound')).toBe(false)
   })
 
+  it('an error from the gateway, or a command it does not know, is a failure that says so', async () => {
+    installBridge()
+    gateway({ rewind: new Error('gateway closed') })
+
+    const { unmount } = render(<TimeMachinePanel />)
+    const first = (await screen.findByTestId('timemachine-list')).querySelector('li') as HTMLElement
+
+    fireEvent.click(within(first).getByRole('button', { name: 'Rewind to here' }))
+    fireEvent.click(within(first).getByRole('button', { name: 'Rewind' }))
+    expect((await screen.findByTestId('timemachine-note')).textContent).toBe('It was not rewound: gateway closed')
+    unmount()
+
+    gateway({ rewind: 'Unknown command: /hermoso-rewind' })
+    render(<TimeMachinePanel />)
+
+    const again = (await screen.findByTestId('timemachine-list')).querySelector('li') as HTMLElement
+
+    fireEvent.click(within(again).getByRole('button', { name: 'Rewind to here' }))
+    fireEvent.click(within(again).getByRole('button', { name: 'Rewind' }))
+    expect((await screen.findByTestId('timemachine-note')).textContent).toBe(
+      'It was not rewound: Unknown command: /hermoso-rewind'
+    )
+  })
+
   it('a result that says no, with no reason, is still a no', async () => {
     installBridge()
-    gateway({ restore: { success: false } })
+    gateway({ rewind: { success: false } })
     render(<TimeMachinePanel />)
 
     const first = (await screen.findByTestId('timemachine-list')).querySelector('li') as HTMLElement
@@ -298,10 +349,14 @@ describe('rewinding', () => {
   })
 
   it('writes what was done in words, whatever Hermes sent back', () => {
-    expect(summaryOf({ restore: ['a'], success: true })).toBe('Rewound: 1 file put back.')
-    expect(summaryOf({ success: true })).toBe('Rewound: 0 files put back.')
-    expect(summaryOf({ restore: ['a', 'b'], skipped_user_edits: ['c', 'd'], success: true })).toBe(
-      'Rewound: 2 files put back. 2 files you changed yourself were kept.'
+    const left = 'The chat was left as it is'
+
+    expect(summaryOf({ restored_files: ['a'], success: true })).toMatch(
+      new RegExp(`^Rewound: 1 file put back\\. ${left}`)
+    )
+    expect(summaryOf({ success: true })).toMatch(new RegExp(`^Rewound: 0 files put back\\. ${left}`))
+    expect(summaryOf({ restored_files: ['a', 'b'], skipped_user_edits: ['c', 'd'], success: true })).toContain(
+      '2 files you changed yourself were kept.'
     )
   })
 })

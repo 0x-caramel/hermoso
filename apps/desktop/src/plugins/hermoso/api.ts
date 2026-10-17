@@ -127,12 +127,14 @@ export interface SnapshotDiff {
   stat: string
 }
 
+/** What the rewind did, as Hermes' own checkpoint manager reports it (the safe restore). */
 export interface RestoreResult {
   error?: string
   failed_deletes?: string[]
-  /** How many chat messages went with the rewind. */
-  history_removed?: number
-  restore?: string[]
+  reason?: string
+  /** What was put back, and what the agent had created and was removed. */
+  restored_files?: string[]
+  restored_to?: string
   skipped_oversize?: string[]
   /** Files the person changed by hand after the snapshot: kept, not overwritten. */
   skipped_user_edits?: string[]

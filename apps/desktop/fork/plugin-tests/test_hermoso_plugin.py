@@ -13,7 +13,9 @@ import sys
 import tempfile
 import threading
 import time
+import types
 import unittest
+import unittest.mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -100,6 +102,7 @@ class FakeCtx:
         self.tools: Dict[str, Dict[str, Any]] = {}
         self.hooks: List[Tuple[str, Any]] = []
         self.middleware: List[Tuple[str, Any]] = []
+        self.commands: List[Tuple[Any, ...]] = []
 
     def register_tool(self, name: str, toolset: str, schema: dict, handler: Any, **kwargs: Any) -> None:
         self.tools[name] = {"toolset": toolset, "schema": schema, "handler": handler, **kwargs}
@@ -109,6 +112,9 @@ class FakeCtx:
 
     def register_middleware(self, kind: str, callback: Any) -> None:
         self.middleware.append((kind, callback))
+
+    def register_command(self, name: str, handler: Any, **kwargs: Any) -> None:
+        self.commands.append((name, handler, kwargs))
 
 
 def state(country: Optional[str] = "Germany", minutes: float = 10.0, phase: str = "away") -> Dict[str, Any]:
@@ -486,6 +492,121 @@ class WithoutTheAppNobodyIsThereToAsk(GuardianCase):
         self.bridge.close()
         _, calls = self.run_tool("terminal", {"command": "rm -rf /"})
         self.assertEqual(calls, [])
+
+
+class TimeMachineCase(unittest.TestCase):
+    """The Time Machine's command puts the project back the safe way, inside Hermes, for the chat's own folder."""
+
+    def setUp(self) -> None:
+        self.plugin = load_plugin()
+        self.cwd = "C:\\Users\\a\\project"
+        self.calls: List[Tuple[Any, ...]] = []
+        self.snapshots: List[Dict[str, Any]] = [
+            {"hash": "b" * 40, "short_hash": "bbbbbbb", "timestamp": "2026-10-17T12:30:00+02:00", "reason": "before write_file"},
+            {"hash": "a" * 40, "short_hash": "aaaaaaa", "timestamp": "2026-10-17T11:00:00+02:00", "reason": "before patch"},
+        ]
+        self.result: Any = {"success": True, "restored_to": "aaaaaaaa", "reason": "before patch", "restored_files": ["a.txt"], "skipped_user_edits": ["mine.txt"]}
+        outer = self
+
+        class FakeManager:
+            def __init__(self, enabled: bool = False, **kwargs: Any) -> None:
+                outer.calls.append(("init", enabled))
+
+            def list_checkpoints(self, cwd: str) -> List[Dict[str, Any]]:
+                outer.calls.append(("list", cwd))
+                return outer.snapshots
+
+            def restore(self, cwd: str, commit_hash: str, file_path: Optional[str] = None, safe: bool = False) -> Any:
+                outer.calls.append(("restore", cwd, commit_hash, file_path, safe))
+                if isinstance(outer.result, Exception):
+                    raise outer.result
+                return outer.result
+
+        runtime_cwd = types.ModuleType("agent.runtime_cwd")
+        runtime_cwd.scoped_session_cwd = lambda: outer.cwd  # type: ignore[attr-defined]
+        checkpoint = types.ModuleType("tools.checkpoint_manager")
+        checkpoint.CheckpointManager = FakeManager  # type: ignore[attr-defined]
+        patcher = unittest.mock.patch.dict(
+            sys.modules,
+            {
+                "agent": types.ModuleType("agent"),
+                "agent.runtime_cwd": runtime_cwd,
+                "tools": types.ModuleType("tools"),
+                "tools.checkpoint_manager": checkpoint,
+            },
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def restores(self) -> List[Tuple[Any, ...]]:
+        return [call for call in self.calls if call[0] == "restore"]
+
+    def test_puts_the_project_back_the_safe_way_for_the_chats_own_folder_and_never_a_single_file(self) -> None:
+        answer = json.loads(self.plugin.timemachine.rewind("a" * 40))
+        self.assertEqual(answer["success"], True)
+        self.assertEqual(answer["restored_files"], ["a.txt"])
+        self.assertEqual(answer["skipped_user_edits"], ["mine.txt"])
+        self.assertEqual(self.restores(), [("restore", self.cwd, "a" * 40, None, True)])
+
+    def test_an_abbreviated_or_capitalised_id_is_fine_and_what_follows_it_is_ignored(self) -> None:
+        self.plugin.timemachine.rewind("ABCDEF1 --all")
+        self.assertEqual(self.restores(), [("restore", self.cwd, "abcdef1", None, True)], "no way to ask for the classic restore")
+
+    def test_anything_that_is_not_a_snapshot_id_never_reaches_hermes(self) -> None:
+        for token in ("HEAD", "../x", "abc", "g123456", "a" * 65, "deadbeef;rm", "-f", "--all", "main"):
+            answer = json.loads(self.plugin.timemachine.rewind(token))
+            self.assertEqual(answer["success"], False, token)
+            self.assertIn("not a snapshot id", answer["error"], token)
+        self.assertEqual(self.restores(), [])
+
+    def test_a_chat_with_no_project_folder_has_nothing_to_put_back(self) -> None:
+        self.cwd = ""
+        answer = json.loads(self.plugin.timemachine.rewind("a" * 40))
+        self.assertEqual(answer["success"], False)
+        self.assertIn("no project folder", answer["error"])
+        self.assertEqual(self.restores(), [])
+
+    def test_hermes_without_snapshots_is_an_answer_not_a_crash(self) -> None:
+        with unittest.mock.patch.dict(sys.modules, {"tools.checkpoint_manager": None}):
+            answer = json.loads(self.plugin.timemachine.rewind("a" * 40))
+        self.assertEqual(answer["success"], False)
+        self.assertIn("not available", answer["error"])
+
+    def test_a_failure_inside_hermes_is_an_answer_not_a_crash(self) -> None:
+        self.result = RuntimeError("disk on fire")
+        answer = json.loads(self.plugin.timemachine.rewind("a" * 40))
+        self.assertEqual(answer["success"], False)
+        self.assertIn("disk on fire", answer["error"])
+
+    def test_an_answer_that_is_not_a_result_is_a_failure(self) -> None:
+        self.result = "weird"
+        self.assertEqual(json.loads(self.plugin.timemachine.rewind("a" * 40))["success"], False)
+
+    def test_hermes_saying_no_is_passed_on_as_it_said_it(self) -> None:
+        self.result = {"success": False, "error": "Checkpoint 'x' not found"}
+        self.assertEqual(json.loads(self.plugin.timemachine.rewind("a" * 40)), self.result)
+
+    def test_with_no_id_it_lists_the_snapshots_for_a_person_typing_it(self) -> None:
+        text = self.plugin.timemachine.rewind("")
+        self.assertIn(self.cwd, text)
+        self.assertLess(text.index("bbbbbbb"), text.index("aaaaaaa"), "newest first, as Hermes lists them")
+        self.assertIn("/hermoso-rewind <snapshot>", text)
+        self.assertEqual(self.restores(), [])
+
+    def test_with_no_snapshots_it_says_so(self) -> None:
+        self.snapshots = []
+        self.assertIn("No snapshots yet", self.plugin.timemachine.rewind(""))
+
+    def test_the_command_is_registered_for_the_person_with_its_argument(self) -> None:
+        ctx = FakeCtx()
+        self.plugin.timemachine.register(ctx)
+        self.assertEqual([name for name, *_ in ctx.commands], ["hermoso-rewind"])
+        self.assertEqual(ctx.commands[0][2]["args_hint"], "<snapshot>")
+
+    def test_the_whole_plugin_registers_it_too(self) -> None:
+        ctx = FakeCtx()
+        self.plugin.register(ctx)
+        self.assertEqual([name for name, *_ in ctx.commands], ["hermoso-rewind"])
 
 
 class FindingTheApp(unittest.TestCase):

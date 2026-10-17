@@ -30,14 +30,11 @@ export function whenText(timestamp: string): string {
 }
 
 export function summaryOf(result: RestoreResult): string {
-  const restored = result.restore?.length ?? 0
+  const restored = result.restored_files?.length ?? 0
   const kept = result.skipped_user_edits?.length ?? 0
+  const stuck = result.failed_deletes?.length ?? 0
 
-  return [
-    T.rewound(restored),
-    kept > 0 ? T.keptEdits(kept) : '',
-    (result.history_removed ?? 0) > 0 ? T.chatRewound : ''
-  ]
+  return [T.rewound(restored), kept > 0 ? T.keptEdits(kept) : '', stuck > 0 ? T.stuck(stuck) : '', T.chatLeft]
     .filter(Boolean)
     .join(' ')
 }
@@ -45,7 +42,6 @@ export function summaryOf(result: RestoreResult): string {
 export function TimeMachinePanel({ className }: { className?: string }) {
   const state = useValue($timeMachine)
   const sessionId = useValue(host.state.activeSessionId)
-  const storedId = useValue(host.state.focusedStoredSessionId)
   const working = useValue(host.state.busy)
 
   // undefined: looking; null: Hermes did not answer
@@ -99,11 +95,6 @@ export function TimeMachinePanel({ className }: { className?: string }) {
       setNote({ bad: false, text: summaryOf(result) })
       setDiffs({})
       void noteRewind()
-
-      // The chat was rewound too: ask the app to show it as it is now.
-      if ((result.history_removed ?? 0) > 0 && storedId) {
-        void host.openSession(storedId, { refreshInPlace: true }).catch(() => {})
-      }
     } else {
       setNote({ bad: true, text: result.error ? T.failed(result.error) : T.failedPlain })
     }

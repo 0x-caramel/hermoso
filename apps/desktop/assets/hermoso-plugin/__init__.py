@@ -5,7 +5,8 @@ model only while a Hermoso desktop app is running and answering (see ``bridge.Li
 setting (the official Hermes app sharing this data folder, a terminal, cron) the plugin stays out of the way.
 The shield (see ``shield``) holds the agent while the VPN is required and its tunnel is down; the guardian (see
 ``guardian``) puts the person between the agent and the few things that cannot be undone. Both do nothing when no
-app is there to ask.
+app is there to ask. The Time Machine (see ``timemachine``) is one slash command, the person's, that puts the project
+folder back to one of Hermes' snapshots the safe way.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import guardian, shield, teleport
+from . import guardian, shield, teleport, timemachine
 from .bridge import Link
 
 logger = logging.getLogger(__name__)
@@ -38,4 +39,5 @@ def register(ctx: Any) -> None:
     teleport.register(ctx, link)
     shield.register(ctx, link)
     guardian.register(ctx, link)
+    timemachine.register(ctx)
     logger.info("hermoso: registered (tools are shown while a Hermoso app is running)")

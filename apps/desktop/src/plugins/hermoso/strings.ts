@@ -51,11 +51,11 @@ export const STRINGS = {
   nav: 'Hermoso',
   timeMachine: {
     blurb:
-      'Just before the agent first changes a file in a turn, Hermes saves a snapshot of the project folder. Here you can see what it changed, and put the project (and the chat) back.',
+      'Just before the agent first changes a file in a turn, Hermes saves a snapshot of the project folder. Here you can see what it changed, and put the project’s files back.',
     cancel: 'Cancel',
-    chatRewound: 'The chat went back to that point too.',
+    chatLeft: 'The chat was left as it is, so the agent still knows what it did: tell it the files are back.',
     confirm: (when: string) =>
-      `Put the project back to how it was at ${when}? Everything the agent changed after that is undone, and the chat goes back to that point.`,
+      `Put the project's files back to how they were at ${when}? Everything the agent changed after that is undone and the files it created are removed. Files you edited yourself are kept. The chat is left as it is.`,
     failed: (reason: string) => `It was not rewound: ${reason}`,
     failedPlain: 'It was not rewound.',
     keptEdits: (n: number) => `${n} file${n === 1 ? '' : 's'} you changed yourself ${n === 1 ? 'was' : 'were'} kept.`,
@@ -74,6 +74,7 @@ export const STRINGS = {
     rewindHere: 'Rewind to here',
     rewinding: 'Rewinding…',
     rewound: (n: number) => `Rewound: ${n} file${n === 1 ? '' : 's'} put back.`,
+    stuck: (n: number) => `${n} file${n === 1 ? '' : 's'} could not be removed.`,
     seeChanges: 'See changes',
     switchDescription: 'Applies from the next start of Hermoso. Nothing in your own settings is changed.',
     switchTitle: 'Snapshot before the agent changes files',

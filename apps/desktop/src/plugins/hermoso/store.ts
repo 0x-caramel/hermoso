@@ -349,12 +349,38 @@ export async function diffSnapshot(sessionId: string, hash: string): Promise<nul
   }
 }
 
-/** Put the project (and the chat) back to a snapshot. A refusal (the agent is working, say) comes back as a result. */
+/** What the plugin's `/hermoso-rewind` printed: one line of JSON, or a sentence when something went wrong. */
+export function parseRewindOutput(output: unknown): RestoreResult {
+  const text = typeof output === 'string' ? output.trim() : ''
+  const last = text.split(/\r?\n/).filter(Boolean).at(-1) ?? ''
+
+  try {
+    const parsed = JSON.parse(last)
+
+    if (parsed && typeof parsed === 'object' && typeof parsed.success === 'boolean') {
+      return parsed as RestoreResult
+    }
+  } catch {
+    // not JSON: Hermes said something else (an older plugin, an unknown command)
+  }
+
+  return { error: text.slice(0, 200) || 'Hermes did not answer.', success: false }
+}
+
+/**
+ * Put the project's files back to a snapshot, the safe way: what the agent changed is undone and what it created is
+ * removed, and what the person edited by hand since is kept. It is the plugin's `/hermoso-rewind` command, run for the
+ * open chat through the gateway's slash.exec (the gateway's own rollback.restore is the classic restore, which leaves
+ * the files the agent created). The chat is left as it is.
+ */
 export async function restoreSnapshot(sessionId: string, hash: string): Promise<RestoreResult> {
   try {
-    return (
-      (await host.request<RestoreResult>('rollback.restore', { hash, session_id: sessionId })) ?? { success: false }
-    )
+    const answer = await host.request<{ output?: string }>('slash.exec', {
+      command: `/hermoso-rewind ${hash}`,
+      session_id: sessionId
+    })
+
+    return parseRewindOutput(answer?.output)
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error), success: false }
   }
