@@ -9,6 +9,7 @@ import { atom } from '@hermes/plugin-sdk'
 import {
   type AgentLink,
   type AllowedItem,
+  CALM_SHIELD,
   type ConsentAnswer,
   type ConsentPrompt,
   type Destination,
@@ -17,13 +18,24 @@ import {
   IDLE_TELEPORT,
   type JumpRequest,
   onHermosoEvent,
+  type RadarView,
   readEvent,
+  type ShieldState,
   type TeleportResult,
   type TeleportState
 } from './api'
 
 export const $teleport = atom<TeleportState>(IDLE_TELEPORT)
 export const $destinations = atom<Destination[]>([])
+
+/** The shield's verdict: is the agent standing still because the VPN tunnel is down? */
+export const $shield = atom<ShieldState>(CALM_SHIELD)
+
+/** The last look at the app's connections, and what the ledger has counted so far. */
+export const $radar = atom<null | RadarView>(null)
+
+/** Mullvad's "Always require VPN" (null: not known, the CLI did not answer). */
+export const $lockdown = atom<boolean | null>(null)
 
 /** False until main's first answer lands. */
 export const $hermosoReady = atom(false)
@@ -98,6 +110,11 @@ export function startHermoso(): () => void {
 
           break
 
+        case 'shield':
+          $shield.set(event.state)
+
+          break
+
         case 'consent-closed':
           $consent.set($consent.get().filter(entry => entry.id !== event.id))
           void loadAllowed()
@@ -123,6 +140,7 @@ export function startHermoso(): () => void {
   // A window that opens (or reloads) while a request is waiting must see it.
   void hermosoCall<ConsentPrompt[]>('consent.pending').then(list => list?.forEach(addPrompt))
   void hermosoCall<AgentLink>('agent.state').then(link => link && $agent.set(link))
+  void hermosoCall<ShieldState>('shield.state').then(state => state && $shield.set(state))
   void loadAllowed()
 
   const vpn = vpnBridge()
@@ -204,4 +222,44 @@ export function ackConsent(id: string): void {
 export async function revokeAllowed(key: string): Promise<void> {
   await hermosoCall('consent.revoke', { key })
   await loadAllowed()
+}
+
+// ── the shield ──
+
+/** Look at the app's connections now: the answer is painted, and the ledger counts what it saw. */
+export async function lookAtRadar(): Promise<void> {
+  const view = await hermosoCall<RadarView>('shield.radar')
+
+  if (view?.sample) {
+    $radar.set(view)
+    $shield.set(view.shield)
+  }
+}
+
+export async function loadLockdown(): Promise<void> {
+  const on = await hermosoCall<boolean | null>('shield.lockdown.get')
+
+  $lockdown.set(typeof on === 'boolean' ? on : null)
+}
+
+/** Ask Mullvad to turn "Always require VPN" on or off. What it says afterwards is what is shown, never what was asked. */
+export async function setLockdown(on: boolean): Promise<boolean> {
+  const result = await hermosoCall<{ ok: boolean; on: boolean | null }>('shield.lockdown.set', { on })
+
+  $lockdown.set(typeof result?.on === 'boolean' ? result.on : null)
+
+  return result?.ok === true
+}
+
+/** The proof report, as Markdown (null when Hermoso did not answer). */
+export async function readReport(): Promise<null | string> {
+  const text = await hermosoCall<string>('shield.report')
+
+  return typeof text === 'string' ? text : null
+}
+
+export async function resetRadar(): Promise<void> {
+  await hermosoCall('shield.reset')
+  $radar.set(null)
+  await lookAtRadar()
 }

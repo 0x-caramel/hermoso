@@ -460,7 +460,8 @@ const FORK_UNIT_TESTS = [
   'electron/fork-update.test.ts',
   'src/store/vpn.test.ts',
   'src/components/vpn-gate-overlay.test.tsx',
-  // Hermoso (path filters: every test file under them): Teleport, the bridge, the plugin installer, the window plugin
+  // Hermoso (path filters: every test file under them): Teleport, the shield, the bridge, the plugin installer, the window plugin
+  'electron/mullvad-lockdown.test.ts',
   'electron/mullvad-relay.test.ts',
   'electron/vpn-controller-hold.test.ts',
   'electron/hermoso',

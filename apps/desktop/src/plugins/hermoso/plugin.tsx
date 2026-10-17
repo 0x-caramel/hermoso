@@ -17,6 +17,7 @@ import {
 } from '@hermes/plugin-sdk'
 
 import { HermosoPage } from './page'
+import { ShieldChip } from './shield-chip'
 import { startHermoso } from './store'
 import { STRINGS } from './strings'
 import { TeleportChip } from './teleport-chip'
@@ -24,7 +25,7 @@ import { TeleportChip } from './teleport-chip'
 const PATH = '/hermoso'
 
 const plugin: HermesPlugin = {
-  description: 'Teleport and the protections that ride along with the agent.',
+  description: 'The shield, Teleport and the protections that ride along with the agent.',
   id: 'hermoso',
   name: 'Hermoso',
   register(ctx) {
@@ -37,6 +38,12 @@ const plugin: HermesPlugin = {
         id: 'page',
         render: () => <HermosoPage />,
         title: STRINGS.nav
+      },
+      {
+        area: STATUSBAR_AREAS.right,
+        id: 'shield',
+        order: 84,
+        render: () => <ShieldChip />
       },
       {
         area: STATUSBAR_AREAS.right,
@@ -54,7 +61,7 @@ const plugin: HermesPlugin = {
         area: PALETTE_AREA,
         data: {
           id: 'hermoso.open',
-          keywords: ['hermoso', 'protect', 'teleport', 'vpn'],
+          keywords: ['hermoso', 'protect', 'shield', 'teleport', 'vpn'],
           label: STRINGS.palette.open,
           run: () => host.navigate(PATH)
         } satisfies PaletteContribution,

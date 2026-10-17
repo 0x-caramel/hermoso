@@ -63,6 +63,65 @@ export interface AgentLink {
   version: null | string
 }
 
+/** The verdict of the shield: the agent must stand still while the VPN is required and the tunnel is not up. */
+export interface ShieldState {
+  frozen: boolean
+  reason: 'tunnel-down' | null
+  /** Whether the person's settings ask for the tunnel to be up. */
+  required: boolean
+  /** When the freeze began (epoch ms); null while not frozen. */
+  since: null | number
+  tunnel: string
+  updatedAt: number
+}
+
+export type Route = 'lan' | 'loopback' | 'outside' | 'tunnel'
+
+export interface RadarConnection {
+  localAddress: string
+  localPort: number
+  pid: number
+  process: string
+  remoteAddress: string
+  remotePort: number
+  route: Route
+  state: string
+}
+
+export interface RadarSample {
+  at: number
+  connections: RadarConnection[]
+  error: null | string
+  tunnelAddresses: string[]
+}
+
+export interface LedgerSummary {
+  byRoute: Record<Route, number>
+  frozenSeconds: number
+  lastAt: null | number
+  missed: number
+  outside: { at: number; pid: number; port: number; process: string; remote: string }[]
+  samples: number
+  seen: number
+  startedAt: number
+}
+
+/** What one look at the machine gives back. */
+export interface RadarView {
+  sample: RadarSample
+  shield: ShieldState
+  summary: LedgerSummary
+}
+
+export const CALM_SHIELD: ShieldState = {
+  frozen: false,
+  reason: null,
+  required: false,
+  since: null,
+  tunnel: 'unknown',
+  updatedAt: 0
+}
+
 export const IDLE_TELEPORT: TeleportState = { error: null, home: null, phase: 'idle', trip: null, updatedAt: 0 }
 
 type HermosoBridge = {
@@ -95,6 +154,7 @@ type HermosoEvent =
   | { agent: AgentLink; type: 'agent' }
   | { id: string; type: 'consent-closed' }
   | { prompt: ConsentPrompt; type: 'consent' }
+  | { state: ShieldState; type: 'shield' }
   | { state: TeleportState; type: 'teleport' }
 
 export function readEvent(payload: unknown): HermosoEvent | null {
@@ -112,6 +172,11 @@ export function readEvent(payload: unknown): HermosoEvent | null {
 
     case 'consent':
       return event.prompt && typeof (event.prompt as { id?: unknown }).id === 'string' ? (event as HermosoEvent) : null
+
+    case 'shield':
+      return event.state && typeof (event.state as { frozen?: unknown }).frozen === 'boolean'
+        ? (event as HermosoEvent)
+        : null
 
     case 'consent-closed':
       return typeof event.id === 'string' ? (event as HermosoEvent) : null
