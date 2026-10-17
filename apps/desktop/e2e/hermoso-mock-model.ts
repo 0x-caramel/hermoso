@@ -30,6 +30,8 @@ import type { AddressInfo } from 'node:net'
 
 export const TELEPORT_YES = 'E2E_TELEPORT_YES'
 export const TELEPORT_NO = 'E2E_TELEPORT_NO'
+/** An agent that wants to look at flight and hotel prices from another country (the README's example). */
+export const TELEPORT_TRIP = 'E2E_TELEPORT_TRIP'
 export const YES_DONE = 'Teleport round trip complete.'
 export const NO_DONE = 'The person refused the teleport.'
 export const TOOLS_MISSING = 'HERMOSO TOOLS MISSING: hermoso_teleport was neither offered nor listed for the model.'
@@ -106,6 +108,17 @@ const SCRIPTS: Record<string, (context: Context) => Turn> = {
         }
       },
       { text: NO_DONE }
+    ][results.length] ?? { text: 'done' },
+  [TELEPORT_TRIP]: ({ results }) =>
+    [
+      {
+        tool: {
+          args: { country: 'Germany', minutes: 10, reason: 'Compare flight and hotel prices from Germany' },
+          name: 'hermoso_teleport'
+        }
+      },
+      { tool: { args: {}, name: 'hermoso_return_home' } },
+      { text: YES_DONE }
     ][results.length] ?? { text: 'done' },
   [TELEPORT_YES]: ({ results }) =>
     [

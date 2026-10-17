@@ -32,8 +32,10 @@ import {
   GUARD_DENIED_DONE,
   GUARD_WRITE,
   GUARD_WRITTEN_DONE,
+  TELEPORT_TRIP,
   TM_DONE,
-  TM_WRITE
+  TM_WRITE,
+  YES_DONE
 } from './hermoso-mock-model'
 import { expect, test } from './test'
 
@@ -278,6 +280,19 @@ test.describe('The README pictures', () => {
       await column.evaluate(element => element.closest('.overflow-y-auto')?.scrollTo(0, 0))
       await page.waitForTimeout(500)
       await column.screenshot({ path: shot('page') })
+
+      // ── Teleport, asked by the agent: the question comes before anything moves (the README's flights and hotels) ──
+      await newSession()
+      await say(page, `${TELEPORT_TRIP} find me the cheapest flight and a hotel`)
+
+      const ask = page.getByRole('dialog').filter({ hasText: /Teleport to/ })
+
+      await expect(ask).toContainText('Teleport to Germany?', { timeout: 180_000 })
+      await expect(ask).toContainText('Compare flight and hotel prices from Germany')
+      await page.waitForTimeout(500)
+      await ask.screenshot({ path: shot('teleport-ask') })
+      await ask.getByRole('button', { name: 'Allow once' }).click()
+      await expect(page.getByText(YES_DONE)).toBeVisible({ timeout: 180_000 })
     } finally {
       await ghost?.close().catch(() => undefined)
       killGhosts()
