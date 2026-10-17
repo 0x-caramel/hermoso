@@ -8,19 +8,19 @@ This repository is released under the **MIT licence** (see [LICENSE](LICENSE)).
   notice are kept in `LICENSE`, as the licence requires.
 - **Hermoso's additions** (the files under `apps/desktop/electron/hermoso/`, `apps/desktop/src/plugins/hermoso/`,
   `apps/desktop/assets/hermoso-plugin/` and `apps/desktop/fork/`, and the documents in `docs/hermoso/` and `.github/`)
-  are copyright (c) 2026 the Hermoso authors, released under the same MIT licence.
+  are copyright (c) 2026 [0x-caramel](https://github.com/0x-caramel), released under the same MIT licence.
 
-## Not covered by the MIT licence: the Hermoso portrait
+## The Hermoso portrait
 
 The portrait of Hermoso (the anime boy with headphones: `apps/desktop/fork/brand/hermoso/source.png`, and every image
-drawn from it, such as `docs/hermoso/logo.png` and the app icons) is **not** covered by the MIT licence of the code.
+drawn from it, such as `docs/hermoso/logo.png` and the app icons) was made by the project's maintainer,
+[0x-caramel](https://github.com/0x-caramel), who has all the rights to it. It is the face of this project and is **not**
+part of the MIT grant of the code:
 
-- It was supplied by the project's maintainer, and the rights to it belong to whoever made it, not to the code's
-  contributors.
-- **Before you redistribute it, make sure you may.** The simplest way to be sure is to replace it with your own art: put
-  your image in `apps/desktop/fork/brand/hermoso/source.png` and run `fork/brand/hermoso.py` (see `fork/FORK.md`), which
-  redraws every tile and icon from it.
-- Hermoso's code works the same with any portrait.
+- It may be redistributed unchanged, together with Hermoso.
+- If you make a different project from this code, please use your own artwork. Put your image in
+  `apps/desktop/fork/brand/hermoso/source.png` and run `fork/brand/hermoso.py` (see `fork/FORK.md`): it redraws every
+  tile and icon from it. Hermoso's code works the same with any portrait.
 
 The official Hermes artwork that the portrait is drawn onto (the tile shapes) belongs to Nous Research.
 

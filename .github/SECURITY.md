@@ -14,10 +14,10 @@ Please report privately, not in a public issue:
 2. Say what you found, how to reproduce it (the smaller the better), the version or commit, and what you think the
    impact is.
 
-This is a small volunteer project. We will acknowledge your report within **7 days**, tell you what we think of it
-within **14 days**, and aim to fix it, or document a mitigation, within **90 days**. We will ask before we publish
-anything that mentions you, and we are glad to credit you. If a report turns out to be a known limit rather than a bug, we
-will say so and point at where it is written.
+This is a one-person volunteer project, so there are no fixed response times: reports are read as soon as possible, and
+you will be told what is thought of yours (a bug, or a known limit, in which case the answer points at where it is
+written) and what will be done about it. Fixes come as soon as they can. Nothing that mentions you is published without
+asking you first, and you are credited if you wish.
 
 ## What counts as a vulnerability in Hermoso
 

@@ -144,7 +144,8 @@ Hermoso is a guard, not a vault. The short version (the long one is in the [thre
   home, more than 50,000 files) are not snapshotted, nor files over 10 MB.
 - **A ghost is deleted, not shredded.** Solid-state disks, hibernation and backups may keep traces. Your model's
   provider still sees what you send it.
-- **Windows only** for now. The radar and the ghost's cleaner are written for Windows.
+- **Windows only** for now. The radar (it uses `netstat` and PowerShell) and the installer are written for Windows, and
+  nothing has been tried on a Mac or on Linux.
 - **Not audited.** The behaviour is tested (below), but nobody outside this project has attacked it yet.
 
 ## Install
@@ -244,7 +245,10 @@ sandbox".)
 
 **Do I need Mullvad?** For the VPN gate, Shield and Teleport, yes. For Guardian, Time Machine and Ghost, no.
 
-**Does it work on macOS or Linux?** Not tested, and not supported yet.
+**Does it work on macOS or Linux?** Not yet. The Shield's radar and the installer are written for Windows, and the rest
+has only been tried on Windows. Several parts look portable (the Mullvad driver already knows the macOS and Linux paths,
+the guardian's rules already include macOS and Linux locations, the agent's plugin is plain Python), so a port is
+possible; it needs someone with a Mac to write and test the radar and the packaging.
 
 **What is Aura for?** For fun. It is arithmetic over counters Hermoso keeps anyway.
 
@@ -257,11 +261,13 @@ To report a vulnerability, a way past a protection, or a claim in these document
 
 ## License
 
-MIT. See [LICENSE](../LICENSE): the original copyright of Nous Research is kept, and Hermoso's additions are released
-under the same licence. The Hermoso portrait is **not** covered by it, see [NOTICE](../NOTICE.hermoso.md).
+MIT. See [LICENSE](../LICENSE): the original copyright of Nous Research is kept, and Hermoso's additions are copyright
+(c) 2026 [0x-caramel](https://github.com/0x-caramel), under the same licence. The Hermoso portrait is the maintainer's own
+artwork and is not part of that grant: see [NOTICE](../NOTICE.hermoso.md).
 
 ## Credits and disclaimers
 
+- **Hermoso** is made by [0x-caramel](https://github.com/0x-caramel).
 - **Hermes Agent and Hermes Desktop** are by [Nous Research](https://nousresearch.com), MIT licensed. Hermoso is built on
   their work and would not exist without it. "Hermes" and "Nous Research" belong to their owners.
 - **Mullvad** is a trademark of Mullvad VPN AB. Hermoso drives the Mullvad command-line tool that comes with the app; he

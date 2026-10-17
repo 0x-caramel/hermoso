@@ -1,7 +1,7 @@
 # Publishing Hermoso
 
-A checklist for whoever puts this repository on GitHub. **Nothing here has been pushed anywhere**: every commit is local
-until you decide.
+A checklist for putting this repository on GitHub. **Nothing here has been pushed anywhere**: every commit is local until
+you decide.
 
 ## What is ready
 
@@ -11,38 +11,34 @@ until you decide.
 | [`.github/SECURITY.md`](../../.github/SECURITY.md) | How to report a vulnerability, what counts, what does not |
 | [`.github/CONTRIBUTING.md`](../../.github/CONTRIBUTING.md) | The two rules of the fork, how to run the tests, what will not be merged |
 | [`docs/hermoso/THREAT-MODEL.md`](THREAT-MODEL.md) | What each protection guarantees, and where it stops |
-| [`LICENSE`](../../LICENSE) / [`NOTICE.hermoso.md`](../../NOTICE.hermoso.md) | MIT, with Nous Research's copyright kept; the portrait is excluded and flagged |
+| [`LICENSE`](../../LICENSE) / [`NOTICE.hermoso.md`](../../NOTICE.hermoso.md) | MIT, with Nous Research's copyright kept and 0x-caramel's added; the portrait is the maintainer's own |
 | `docs/hermoso/screenshots/` | The pictures the README shows (made by `apps/desktop/e2e/hermoso-screenshots.spec.ts`) |
 
-## Before you push: five things only you can decide
+## Already decided
 
-1. **The portrait.** `apps/desktop/fork/brand/hermoso/source.png` (and the logo and icons drawn from it) is not covered by
-   the MIT licence, and the project does not know who made it. Be sure you may publish it, or swap it for your own art
-   (see [`NOTICE.hermoso.md`](../../NOTICE.hermoso.md)). If in doubt, publish without it first: the code does not need it.
-2. **Your name and e-mail in the history.** Every Hermoso commit is authored with the identity in `git config`
-   (`git log hermoso-base..hermoso --format='%an <%ae>' | sort -u`). Pushing makes that public. To publish under GitHub's
-   no-reply address instead, set it *before* pushing and rewrite the author:
+- **The portrait** is the maintainer's own artwork (see [`NOTICE.hermoso.md`](../../NOTICE.hermoso.md)).
+- **The history carries no personal e-mail.** Every Hermoso commit is authored as
+  `0x-caramel <85824521+0x-caramel@users.noreply.github.com>` (GitHub's no-reply address, which still links the commits to the
+  account). To check before pushing: `git log --format='%an <%ae> | %cn <%ce>' | sort -u`. The official Hermes commits
+  below `hermoso-base` keep their own authors: they are already public.
+- **The copyright holder** is 0x-caramel.
+- **No response times are promised** in `SECURITY.md`: reports are answered as soon as possible.
 
-   ```bash
-   git branch backup/before-reauthor        # a way back
-   git switch hermoso
-   git config user.email "<id>+<username>@users.noreply.github.com"
-   git rebase --exec "git commit --amend --reset-author --no-edit" hermoso-base   # only the fork's own commits move
-   ```
+## Before you push
 
-   (Official Hermes commits, below `hermoso-base`, keep their own authors: they are already public.)
-3. **The copyright holder.** `LICENSE` and `NOTICE.hermoso.md` say "the Hermoso authors". Put your name there if you want it.
-4. **Which branches go.** Publish `hermoso` (the fork), `hermoso-base` (the official commit it sits on) and, if you want
-   them, `main`. Do **not** push the `backup/*` branches or `mullvad-vpn` (a separate, private fork).
-5. **GitHub Actions.** Hermes' own workflows (over fifty of them) are written for Nous Research's infrastructure. In a GitHub
-   *fork* they start disabled; in a brand-new repository they would run on your first push and mostly fail. Either create the
-   repository as a fork of `NousResearch/hermes-agent`, or switch Actions off under *Settings → Actions → General* until you
-   have chosen which workflows you want.
+1. **Which branches go.** Publish `hermoso` (the fork), `hermoso-base` (the official commit it sits on) and, if you want
+   them, `main`. Do **not** push the `backup/*` branches or `mullvad-vpn` (a separate, private fork whose commits carry
+   another identity).
+2. **GitHub Actions.** Actions are GitHub's robots: they run checks and tests by themselves every time something is pushed.
+   Hermes' repository has over fifty of them, written for Nous Research's own servers, and in a new repository they would
+   all start on your first push and mostly fail (red crosses everywhere). Two easy ways out: create the repository with the
+   **Fork** button on `NousResearch/hermes-agent` (a fork starts with Actions switched off), or, in a new repository, open
+   *Settings → Actions → General* and choose **Disable actions**.
 
 ## Publishing
 
 ```bash
-git remote add origin https://github.com/<you>/hermoso.git     # a fork, or an empty repository
+git remote add origin https://github.com/0x-caramel/hermoso.git
 git push origin hermoso hermoso-base main
 ```
 
@@ -65,7 +61,7 @@ node apps/desktop/fork/installer/build.mjs      # wraps it: apps/desktop/release
 
 The second command prints the installer's SHA-256. Create a release, attach the `.exe`, and **paste the SHA-256 into the
 release notes** (the README and SECURITY.md tell people to compare it). The installer is not code-signed, so Windows
-SmartScreen will say "Unknown publisher" once; say so in the release notes too.
+SmartScreen will say "Unknown publisher"; say so in the release notes too.
 
 ## Keeping it current
 
