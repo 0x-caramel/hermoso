@@ -216,9 +216,9 @@ installed over the old one; your data stays. The installer is **not code-signed*
 Windows SmartScreen shows "Unknown publisher" once: *More info*, then *Run anyway*. Check the checksum on the Releases
 page if you want to be sure it is the file that was published.
 
-**From source.**
-
-Clone the repository with git (not *Download ZIP*: the build reads the official Hermes commit from git), then:
+**From source.** You need git and **Node.js 24.11 or newer** (22.22 works too), with an npm below 11.10 or from 11.17 on: the
+repository refuses the ones in between (`Unsupported engine`; `npm install -g npm@latest` fixes it). Clone with git, not
+*Download ZIP*: the build reads the official Hermes commit from git.
 
 ```bash
 git clone https://github.com/0x-caramel/hermoso.git
@@ -227,6 +227,10 @@ npm install
 node apps/desktop/fork/pack.mjs          # builds and packs the app (a few minutes)
 node apps/desktop/fork/installer/build.mjs   # optional: the Windows installer
 ```
+
+The clone is the whole Hermes repository (about 1.3 GB). To get it in a minute instead, clone with `git clone --depth 1
+https://github.com/0x-caramel/hermoso.git`, and run `git fetch --depth 1 origin
+hermoso-base:refs/remotes/origin/hermoso-base` once before packing.
 
 Run it from the Start Menu: **Hermoso**.
 
