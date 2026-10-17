@@ -309,6 +309,14 @@ class TheTunnelIsDown(ShieldCase):
             self.assertEqual(calls, [0], url)
         self.assertEqual(self.sleeps, [])
 
+    def test_a_test_can_ask_for_a_local_model_to_be_held_too(self) -> None:
+        os.environ["HERMOSO_SHIELD_HOLD_LOCAL"] = "1"
+        self.addCleanup(os.environ.pop, "HERMOSO_SHIELD_HOLD_LOCAL", None)
+        self.after_sleeps = {2: {"frozen": False}}
+        answer, calls = self.run_model("http://127.0.0.1:11434/v1")
+        self.assertEqual(answer, "the model answered")
+        self.assertEqual(calls, [2], "held although the model is on this computer")
+
     def test_anything_that_could_be_the_internet_is_held(self) -> None:
         for url in ("https://api.openai.com/v1", "", None, "https://openrouter.ai/api/v1", "http://my-model-box/v1", "http://8.8.8.8/v1"):
             self.sleeps.clear()

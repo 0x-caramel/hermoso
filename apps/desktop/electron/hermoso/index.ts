@@ -84,6 +84,9 @@ const QUIT_WAIT_MS = 8_000
 // How often the shield looks at the VPN controller, and the radar at the machine's connections.
 const SHIELD_CHECK_MS = 1_000
 const RADAR_SAMPLE_MS = 10_000
+// The VPN controller polls Mullvad every few seconds; an agent about to act asks for a fresher look than that,
+// but never more often than this (a frozen agent asks every second).
+const FRESH_VERDICT_MS = 2_000
 // A plugin that has not asked for this long is not talking to us any more.
 const AGENT_STALE_MS = 60_000
 
@@ -158,6 +161,18 @@ export function createHermoso(deps: HermosoDeps) {
     onChange: state => broadcast(EVENT_CHANNEL, { state, type: 'shield' }),
     vpn: () => deps.vpn.getState()
   })
+
+  let lastLook = 0
+
+  /** The verdict after a fresh look at the tunnel (at most one look per FRESH_VERDICT_MS), for who is about to act. */
+  const freshVerdict = async () => {
+    if (Date.now() - lastLook >= FRESH_VERDICT_MS) {
+      lastLook = Date.now()
+      await deps.vpn.refresh().catch(() => {})
+    }
+
+    return shield.check()
+  }
 
   const ledger = createLedger()
   let tunnelInterface = 'Mullvad'
@@ -272,7 +287,7 @@ export function createHermoso(deps: HermosoDeps) {
   })
 
   // The plugin asks before it acts: is the agent allowed to move right now?
-  bridge.route('GET', '/v1/shield/state', () => ({ ...shield.check(), ok: true }))
+  bridge.route('GET', '/v1/shield/state', async () => ({ ...(await freshVerdict()), ok: true }))
 
   bridge.route('POST', '/v1/teleport/jump', ({ body }) => agentJump(body))
   bridge.route('POST', '/v1/teleport/home', () => teleport.home('agent'))
@@ -325,7 +340,7 @@ export function createHermoso(deps: HermosoDeps) {
       return true
     },
 
-    'shield.state': () => shield.check(),
+    'shield.state': () => freshVerdict(),
     'teleport.destinations': () => teleport.destinations(),
     'teleport.home': () => teleport.home('user'),
     'teleport.jump': params => teleport.jump(parseJump(params, 'user')),

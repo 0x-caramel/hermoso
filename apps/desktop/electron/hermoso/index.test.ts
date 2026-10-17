@@ -511,6 +511,18 @@ describe('the shield', () => {
     expect(await h.hermoso.call('shield.state')).toMatchObject({ frozen: true, tunnel: 'connecting' })
   })
 
+  it('takes a fresh look at the tunnel for who is about to act, but not more than once in a couple of seconds', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+    h.vpn.refresh.mockClear()
+
+    await bridge(h.home, 'GET', '/v1/shield/state')
+    await bridge(h.home, 'GET', '/v1/shield/state')
+    await h.hermoso.call('shield.state')
+    expect(h.vpn.refresh).toHaveBeenCalledTimes(1)
+  })
+
   it('"Always require VPN" is read and set with the person’s own click, and a failure is not a pretend success', async () => {
     const h = make()
 

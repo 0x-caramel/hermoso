@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import os
 import time
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import urlparse
@@ -68,6 +69,12 @@ def _interrupted() -> bool:
         return bool(is_interrupted())
     except Exception:
         return False
+
+
+def holds_local_models() -> bool:
+    """For tests only: HERMOSO_SHIELD_HOLD_LOCAL=1 holds the call to a model on this computer too, so a test can
+    use a scripted model on 127.0.0.1 and still see the freeze. Nobody needs it otherwise."""
+    return os.environ.get("HERMOSO_SHIELD_HOLD_LOCAL", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def is_local_endpoint(base_url: Any) -> bool:
@@ -148,7 +155,7 @@ class Shield:
     def llm_execution(self, request: Any = None, next_call: Optional[Callable[..., Any]] = None, base_url: Any = "", **_: Any) -> Any:
         if next_call is None:
             return None
-        if not is_local_endpoint(base_url):
+        if holds_local_models() or not is_local_endpoint(base_url):
             # No limit: a frozen agent stays frozen until the tunnel is back, or the person stops it.
             self.wait_until_clear(None, "the call to the model")
         return next_call()
