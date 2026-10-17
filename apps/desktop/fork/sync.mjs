@@ -819,8 +819,13 @@ function replayAndVerify({ base, options, stack, target }) {
       step('fork unit tests', () => mustSucceed(sh('npx', ['vitest', 'run', ...FORK_UNIT_TESTS]), 'unit tests'))
       step('fork updater tests', () =>
         mustSucceed(
-          sh('node', ['--test', path.join('fork', 'update.test.mjs'), path.join('fork', 'tail.test.mjs')]),
-          'fork/update.test.mjs, fork/tail.test.mjs'
+          sh('node', [
+            '--test',
+            path.join('fork', 'update.test.mjs'),
+            path.join('fork', 'tail.test.mjs'),
+            path.join('fork', 'pack.test.mjs')
+          ]),
+          'fork/update.test.mjs, fork/tail.test.mjs, fork/pack.test.mjs'
         )
       )
 

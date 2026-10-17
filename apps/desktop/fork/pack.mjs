@@ -35,15 +35,35 @@ export function stampEnv(sha, branch = 'main') {
   return { GITHUB_REF_NAME: branch, GITHUB_SHA: sha, ...identityEnv(DESKTOP) }
 }
 
-/** The official commit the fork sits on: what its base branch (`main`, or `hermoso-base`) records. */
+/**
+ * The official commit the fork sits on: what its base branch (`main`, or `hermoso-base`) records. A fresh clone has no
+ * local branch of that name, only `origin/<base>`, so the remote-tracking one counts too.
+ */
 export function officialBase(cwd = DESKTOP) {
-  const r = spawnSync('git', ['rev-parse', IDENTITY.base], { cwd, encoding: 'utf8', windowsHide: true })
+  const git = args => spawnSync('git', args, { cwd, encoding: 'utf8', windowsHide: true })
+  const commit = ref => git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
 
-  if (r.status !== 0) {
-    throw new Error(`cannot resolve branch "${IDENTITY.base}" (the official base commit): ${(r.stderr || '').trim()}`)
+  let found = commit(IDENTITY.base)
+
+  if (found.status !== 0) {
+    const tracking = git(['for-each-ref', '--format=%(refname)', `refs/remotes/*/${IDENTITY.base}`])
+      .stdout.split(/\r?\n/)
+      .find(Boolean)
+
+    if (tracking) {
+      found = commit(tracking)
+    }
   }
 
-  return r.stdout.trim()
+  if (found.status !== 0) {
+    throw new Error(
+      `cannot find the branch "${IDENTITY.base}" (it records the official Hermes commit this fork sits on). ` +
+        `A normal clone has it as origin/${IDENTITY.base}; if you cloned a single branch, run: ` +
+        `git fetch origin ${IDENTITY.base}:refs/remotes/origin/${IDENTITY.base}`
+    )
+  }
+
+  return found.stdout.trim()
 }
 
 export function readStamp(file = path.join(DESKTOP, 'build', 'install-stamp.json')) {
