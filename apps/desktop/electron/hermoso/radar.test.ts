@@ -178,6 +178,7 @@ describe('looking at the machine', () => {
     const exec = vi.fn(async (file: string) =>
       file === 'netstat.exe' ? { code: 0, stdout: NETSTAT } : { code: 0, stdout: PROCESSES }
     )
+
     const radar = createRadar({ exec, interfaces: () => ({}), roots: () => [100], tunnelInterface: () => 'Mullvad' })
     const sample = await radar.sample()
 

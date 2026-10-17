@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "note": "One table for both halves of the guardian: the plugin (Python) finds a risky tool call and names its rule; the Hermoso app (TypeScript) says it to the person in these words. The agent never chooses the words. `title` is a gerund phrase (it becomes 'Always allow <title>'); `why` is a whole sentence.",
+  "rules": {
+    "agent-config": {
+      "level": "ask",
+      "title": "Changing the agent's own settings",
+      "why": "The agent would be changing its own rules, keys or plugins."
+    },
+    "catastrophic": {
+      "level": "block",
+      "title": "Wiping a disk",
+      "why": "This would erase a whole drive or your whole home folder, with no way back."
+    },
+    "delete-many": {
+      "level": "ask",
+      "title": "Deleting many files",
+      "why": "This can delete a whole folder with everything in it, and there is no recycle bin for it."
+    },
+    "download-and-run": {
+      "level": "ask",
+      "title": "Running something downloaded from the internet",
+      "why": "This runs code that nobody here has read, with the same rights as you."
+    },
+    "git-destructive": {
+      "level": "ask",
+      "title": "Rewriting git history or discarding changes",
+      "why": "This can throw away work that was not saved anywhere else, or rewrite what others share."
+    },
+    "hermoso-tamper": {
+      "level": "block",
+      "title": "Editing Hermoso's own files",
+      "why": "Hermoso keeps your answers there; the agent changing them would be forging your yes."
+    },
+    "install-software": {
+      "level": "ask",
+      "title": "Installing software on the computer",
+      "why": "This adds programs that run with your rights, from a place the agent chose."
+    },
+    "secrets": {
+      "level": "ask",
+      "title": "Reading passwords, keys or browser data",
+      "why": "This could expose your passwords, keys or logged-in sessions to the agent and whatever it talks to."
+    },
+    "ssh-files": {
+      "level": "ask",
+      "title": "Writing into the SSH folder",
+      "why": "This controls who can log in to your accounts and machines."
+    },
+    "startup-files": {
+      "level": "ask",
+      "title": "Writing files that run by themselves",
+      "why": "A program placed there starts on its own, every time."
+    },
+    "system-change": {
+      "level": "ask",
+      "title": "Changing how the computer is set up",
+      "why": "This changes the whole computer, not just this project: its security, services, accounts or start-up."
+    },
+    "system-files": {
+      "level": "ask",
+      "title": "Writing into system folders",
+      "why": "This changes the computer itself, not a project."
+    },
+    "upload": {
+      "level": "ask",
+      "title": "Sending files to another computer",
+      "why": "This could send your files to a server you have not chosen."
+    },
+    "vpn-tamper": {
+      "level": "ask",
+      "title": "Switching off or changing your VPN",
+      "why": "This could expose your real address: the VPN is yours, and the agent has its own tool to change the country."
+    }
+  }
+}

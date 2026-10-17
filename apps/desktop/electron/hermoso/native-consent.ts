@@ -42,7 +42,7 @@ export function createNativeConsent(deps: NativeConsentDeps) {
       buttons,
       cancelId: deny,
       defaultId: deny,
-      detail: prompt.lines.join('\n\n'),
+      detail: [...prompt.lines, ...(prompt.code ? [prompt.code] : [])].join('\n\n'),
       message: prompt.title,
       noLink: true,
       signal,

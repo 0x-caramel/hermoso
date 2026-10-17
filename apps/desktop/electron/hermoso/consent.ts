@@ -10,8 +10,8 @@
  *   - if no window shows it within a moment (none open, the part of the UI that hosts it hidden), a native dialog
  *     asks instead, so a request can never sit unseen;
  *   - no answer in two minutes is a no;
- *   - "always allow this" is remembered for exactly the thing asked about (one country), listed on the Hermoso page
- *     and revocable there; everything else asks again.
+ *   - "always allow this" is remembered for exactly the thing asked about (one country, one kind of risky command),
+ *     listed on the Hermoso page and revocable there; everything else asks again.
  *
  * This module knows nothing about windows or dialogs: it holds the requests, the clock and the remembered yeses.
  */
@@ -26,6 +26,8 @@ export interface ConsentAsk {
   allowKey: null | string
   /** The thing the person would be allowing always, in words ("Germany"). */
   allowLabel: null | string
+  /** What exactly is about to happen, shown as it is (a command, a path); null when the sentences say it all. */
+  code?: null | string
   kind: string
   /** Plain sentences: what will happen, and why the agent says it needs it. */
   lines: string[]

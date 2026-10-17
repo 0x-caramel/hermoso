@@ -128,11 +128,13 @@ export function createLedger(now: () => number = Date.now) {
     /** The report, in Markdown, ready to save or share. */
     report(context: ReportContext): string {
       const summary = this.summary()
+
       const stamp = (ms: number) =>
         new Date(ms)
           .toISOString()
           .replace('T', ' ')
           .replace(/\.\d+Z$/, ' UTC')
+
       const total = summary.seen
       const clean = summary.byRoute.outside === 0
 

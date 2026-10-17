@@ -33,6 +33,11 @@ function pluginSource(): string {
 
   fs.writeFileSync(path.join(dir, '__init__.py'), 'def register(ctx):\n    pass\n')
   fs.writeFileSync(path.join(dir, 'plugin.yaml'), 'name: hermoso\nversion: 0.1.0\n')
+  // the table of words the guardian shares with the real plugin
+  fs.copyFileSync(
+    path.resolve(import.meta.dirname, '..', '..', 'assets', 'hermoso-plugin', 'guardian-rules.json'),
+    path.join(dir, 'guardian-rules.json')
+  )
 
   return dir
 }
@@ -623,6 +628,192 @@ describe('the shield', () => {
       await vi.advanceTimersByTimeAsync(30_000)
       expect(h.vpn.getState.mock.calls.length).toBe(after)
       expect(looks()).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('the guardian', () => {
+  const ask = (home: string, body: Record<string, unknown>) => bridge(home, 'POST', '/v1/guardian/ask', body)
+
+  it('asks the person in Hermoso, with the shared words and the command as it is, and lets it through on a yes', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const pending = ask(h.home, { detail: 'rm -rf data', rule: 'delete-many', tool: 'terminal' })
+    const prompt: any = await waitForPrompt(h)
+
+    expect(prompt.title).toBe('Deleting many files?')
+    expect(prompt.code).toBe('rm -rf data')
+    expect(prompt.lines[0]).toBe('The agent wants to run this command.')
+    expect(prompt.lines[1]).toMatch(/delete a whole folder/)
+    expect(prompt.allowLabel).toBe('deleting many files')
+    expect(h.win.show).toHaveBeenCalled()
+
+    await h.hermoso.call('consent.answer', { answer: 'once', id: prompt.id })
+    expect((await pending).body).toEqual({ allowed: true, answer: 'once', ok: true })
+  })
+
+  it('a no is final, and the agent is told which way it went', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const pending = ask(h.home, { detail: 'git push --force', rule: 'git-destructive', tool: 'terminal' })
+    const prompt = await waitForPrompt(h)
+
+    await h.hermoso.call('consent.answer', { answer: 'deny', id: prompt.id })
+    expect((await pending).body).toEqual({ allowed: false, answer: 'deny', ok: true })
+  })
+
+  it('what is never allowed is refused with no question at all', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const reply = await ask(h.home, { detail: 'rm -rf /', rule: 'catastrophic', tool: 'terminal' })
+
+    expect(reply.body).toEqual({ allowed: false, answer: 'blocked', ok: true })
+    expect(h.sent.filter(event => event.payload?.type === 'consent')).toHaveLength(0)
+  })
+
+  it('a request that names no rule is refused, and the person is not bothered', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const reply = await ask(h.home, { detail: 'rm -rf data', title: 'Harmless' })
+
+    expect(reply.body).toMatchObject({ code: 'bad-request', ok: false })
+    expect(h.sent.filter(event => event.payload?.type === 'consent')).toHaveLength(0)
+  })
+
+  it('"always" is remembered for that kind of thing only, listed in the allowed list, and can be taken back', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const first = ask(h.home, { detail: 'rm -rf data', rule: 'delete-many', tool: 'terminal' })
+    const prompt = await waitForPrompt(h)
+
+    await h.hermoso.call('consent.answer', { answer: 'always', id: prompt.id })
+    expect((await first).body.allowed).toBe(true)
+    expect(await h.hermoso.call('consent.always')).toEqual([
+      expect.objectContaining({ key: 'guardian:delete-many', label: 'deleting many files' })
+    ])
+
+    // the same kind again: nobody is asked
+    const prompts = () => h.sent.filter(event => event.payload?.type === 'consent').length
+    const before = prompts()
+
+    expect((await ask(h.home, { detail: 'rm -rf other', rule: 'delete-many', tool: 'terminal' })).body).toEqual({
+      allowed: true,
+      answer: 'remembered',
+      ok: true
+    })
+    expect(prompts()).toBe(before)
+
+    // another kind: asks
+    const other = ask(h.home, { detail: 'git reset --hard', rule: 'git-destructive', tool: 'terminal' })
+
+    for (let i = 0; i < 200 && prompts() === before; i++) {
+      await settle()
+    }
+
+    expect(prompts()).toBe(before + 1)
+    await h.hermoso.call('consent.answer', {
+      answer: 'deny',
+      id: ((await h.hermoso.call('consent.pending')) as any[])[0].id
+    })
+    expect((await other).body.allowed).toBe(false)
+
+    expect(await h.hermoso.call('consent.revoke', { key: 'guardian:delete-many' })).toBe(true)
+  })
+
+  it('switched off it asks nobody, but still refuses what is never allowed; the choice is kept in a file', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+    expect(((await h.hermoso.call('guardian.state')) as any).enabled).toBe(true)
+
+    const state: any = await h.hermoso.call('guardian.enable', { on: false })
+
+    expect(state.enabled).toBe(false)
+    expect(JSON.parse(fs.readFileSync(path.join(h.dataDir, 'hermoso', 'settings.json'), 'utf8'))).toEqual({
+      guardian: false,
+      version: 1
+    })
+
+    expect((await ask(h.home, { detail: 'rm -rf data', rule: 'delete-many', tool: 'terminal' })).body).toEqual({
+      allowed: true,
+      answer: 'off',
+      ok: true
+    })
+    expect((await ask(h.home, { detail: 'rm -rf /', rule: 'catastrophic', tool: 'terminal' })).body.allowed).toBe(false)
+    expect(h.sent.filter(event => event.payload?.type === 'consent')).toHaveLength(0)
+
+    // only an explicit true switches it on
+    expect(((await h.hermoso.call('guardian.enable', { on: 'yes' })) as any).enabled).toBe(false)
+    expect(((await h.hermoso.call('guardian.enable', { on: true })) as any).enabled).toBe(true)
+  })
+
+  it('keeps a journal of what it decided and tells the windows as it happens', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const pending = ask(h.home, { detail: 'rm -rf data', rule: 'delete-many', tool: 'terminal' })
+
+    await h.hermoso.call('consent.answer', { answer: 'deny', id: (await waitForPrompt(h)).id })
+    await pending
+    await ask(h.home, { detail: 'rm -rf /', rule: 'catastrophic', tool: 'terminal' })
+
+    const state: any = await h.hermoso.call('guardian.state')
+
+    expect(state.events.map((event: any) => [event.rule, event.decision])).toEqual([
+      ['catastrophic', 'blocked'],
+      ['delete-many', 'denied']
+    ])
+    expect(state.totals).toEqual({ allowed: 0, asked: 1, blocked: 1, denied: 1 })
+
+    const pushed = h.sent.filter(event => event.payload?.type === 'guardian')
+
+    expect(pushed.map(event => event.payload.event.decision)).toEqual(['denied', 'blocked'])
+    expect(pushed.every(event => event.channel === EVENT_CHANNEL)).toBe(true)
+  })
+
+  it('counts what it has done in a file of its own, written when the app goes', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+    await ask(h.home, { detail: 'rm -rf /', rule: 'catastrophic', tool: 'terminal' })
+    await h.hermoso.dispose()
+
+    const file = JSON.parse(fs.readFileSync(path.join(h.dataDir, 'hermoso', 'stats.json'), 'utf8'))
+
+    expect(file.counters).toEqual({ guardianBlocked: 1 })
+    expect(file.recent).toHaveLength(1)
+  })
+})
+
+describe('what the shield did, counted', () => {
+  it('counts a freeze, and how long it lasted when it ends', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    try {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 0)))
+
+      const h = make()
+
+      h.vpnState.tunnel = 'disconnected'
+      h.hermoso.shield.check()
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 41)))
+      h.vpnState.tunnel = 'connected'
+      h.hermoso.shield.check()
+
+      expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ freezes: 1, frozenSeconds: 41 })
     } finally {
       vi.useRealTimers()
     }

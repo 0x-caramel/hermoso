@@ -352,12 +352,12 @@ class WithoutAnAppThereIsNothingToHonor(ShieldCase):
 
 
 class RegisteringTheShield(unittest.TestCase):
-    def test_one_tool_hook_and_one_model_middleware(self) -> None:
+    def test_one_tool_hook_and_two_middlewares_the_model_one_and_the_tool_one(self) -> None:
         plugin = load_plugin()
         ctx = FakeCtx()
         plugin.register(ctx)
         self.assertEqual([name for name, _ in ctx.hooks], ["pre_tool_call"])
-        self.assertEqual([kind for kind, _ in ctx.middleware], ["llm_execution"])
+        self.assertEqual([kind for kind, _ in ctx.middleware], ["llm_execution", "tool_execution"])
 
     def test_the_local_endpoint_rule(self) -> None:
         is_local = load_plugin().shield.is_local_endpoint
@@ -368,6 +368,124 @@ class RegisteringTheShield(unittest.TestCase):
         self.assertFalse(is_local("http://example.local"))
         self.assertFalse(is_local(None))
         self.assertFalse(is_local("not a url at all"))
+
+
+class GuardianCase(unittest.TestCase):
+    """The guardian puts the person between the agent and the risky things, through the app."""
+
+    def setUp(self) -> None:
+        self.plugin = load_plugin()
+        self.dir = Path(tempfile.mkdtemp(prefix="hermoso-plugin-test-"))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.bridge = FakeBridge()
+        self.addCleanup(self.bridge.close)
+        self.bridge.publish(self.dir)
+        self.link = self.plugin.bridge.Link(directory=self.dir, version="9.9.9")
+        self.guardian = self.plugin.guardian.Guardian(self.link)
+
+    def say(self, allowed: Any, answer: str, ok: Any = True) -> None:
+        self.bridge.answers[("POST", "/v1/guardian/ask")] = (200, {"ok": ok, "allowed": allowed, "answer": answer})
+
+    def run_tool(self, tool: str, args: Any) -> Tuple[Any, List[int]]:
+        calls: List[int] = []
+
+        def next_call(payload: Any = None) -> str:
+            calls.append(1)
+            return "the tool ran"
+
+        return self.guardian.tool_execution(tool_name=tool, args=args, next_call=next_call), calls
+
+    def asked(self) -> List[Dict[str, Any]]:
+        return [r for r in self.bridge.requests if r["path"] == "/v1/guardian/ask"]
+
+
+class TheGuardianAsks(GuardianCase):
+    def test_what_is_not_risky_runs_at_once_and_nobody_is_asked(self) -> None:
+        result, calls = self.run_tool("terminal", {"command": "ls -la"})
+        self.assertEqual(result, "the tool ran")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.asked(), [])
+
+    def test_a_risky_call_is_put_to_the_person_with_the_rule_and_the_command(self) -> None:
+        self.say(True, "once")
+        result, calls = self.run_tool("terminal", {"command": "git push --force origin main"})
+        self.assertEqual(result, "the tool ran")
+        self.assertEqual(len(calls), 1)
+        asked = self.asked()
+        self.assertEqual(len(asked), 1)
+        self.assertEqual(asked[0]["auth"], "Bearer tok")
+        self.assertEqual(asked[0]["body"]["rule"], "git-destructive")
+        self.assertEqual(asked[0]["body"]["tool"], "terminal")
+        self.assertEqual(asked[0]["body"]["detail"], "git push --force origin main")
+        self.assertEqual(asked[0]["body"]["level"], "ask")
+
+    def test_a_no_stops_it_and_tells_the_model_to_leave_it_to_the_person(self) -> None:
+        self.say(False, "deny")
+        result, calls = self.run_tool("terminal", {"command": "git push --force origin main"})
+        self.assertEqual(calls, [], "the tool must not run")
+        reply = json.loads(result)
+        self.assertIn("said no", reply["error"])
+        self.assertIn("let them decide", reply["error"])
+        self.assertEqual((reply["blocked_by"], reply["rule"], reply["answer"]), ("hermoso-guardian", "git-destructive", "deny"))
+
+    def test_no_answer_in_time_is_a_no_with_its_own_words(self) -> None:
+        self.say(False, "timeout")
+        result, calls = self.run_tool("write_file", {"path": "C:\\Users\\a\\.ssh\\authorized_keys", "content": "x"})
+        self.assertEqual(calls, [])
+        self.assertIn("did not answer in time", json.loads(result)["error"])
+
+    def test_a_block_is_refused_without_a_way_round(self) -> None:
+        self.say(False, "blocked")
+        result, calls = self.run_tool("terminal", {"command": "rm -rf /"})
+        self.assertEqual(calls, [])
+        error = json.loads(result)["error"]
+        self.assertIn("does not allow this: Wiping a disk", error)
+        self.assertIn("Do not try again", error)
+
+    def test_only_an_explicit_yes_from_the_app_is_a_yes(self) -> None:
+        for allowed, ok in (("yes", True), (1, True), (None, True), (True, False), (True, None), (True, "true")):
+            self.say(allowed, "once", ok=ok)
+            _, calls = self.run_tool("terminal", {"command": "rm -rf src"})
+            self.assertEqual(calls, [], "treated as a yes: allowed=%r ok=%r" % (allowed, ok))
+
+    def test_an_answer_with_no_allowed_field_is_a_no(self) -> None:
+        self.bridge.answers[("POST", "/v1/guardian/ask")] = (200, {"ok": True})
+        _, calls = self.run_tool("terminal", {"command": "rm -rf src"})
+        self.assertEqual(calls, [])
+
+    def test_an_app_that_refuses_the_question_is_a_no(self) -> None:
+        self.bridge.answers[("POST", "/v1/guardian/ask")] = (400, {"ok": False, "code": "bad-request"})
+        _, calls = self.run_tool("terminal", {"command": "rm -rf src"})
+        self.assertEqual(calls, [])
+
+    def test_it_only_looks_at_what_it_has_rules_for(self) -> None:
+        for tool, args in (("web_search", {"query": "rm -rf /"}), ("read_file", {"path": "C:\\Windows\\x"}), ("terminal", {})):
+            result, calls = self.run_tool(tool, args)
+            self.assertEqual((result, len(calls)), ("the tool ran", 1), tool)
+        self.assertEqual(self.asked(), [])
+
+    def test_a_missing_next_call_is_not_a_crash(self) -> None:
+        self.assertIsNone(self.guardian.tool_execution(tool_name="terminal", args={"command": "rm -rf /"}, next_call=None))
+
+
+class WithoutTheAppNobodyIsThereToAsk(GuardianCase):
+    def test_no_app_means_no_guardian_even_for_a_catastrophe(self) -> None:
+        (self.dir / ".bridge.json").unlink()
+        result, calls = self.run_tool("terminal", {"command": "rm -rf /"})
+        self.assertEqual((result, len(calls)), ("the tool ran", 1))
+
+    def test_an_app_that_stops_answering_after_it_was_there_means_the_risky_thing_is_not_done(self) -> None:
+        self.assertTrue(self.link.available())
+        self.bridge.close()
+        result, calls = self.run_tool("terminal", {"command": "rm -rf src"})
+        self.assertEqual(calls, [])
+        self.assertIn("stopped answering", json.loads(result)["error"])
+
+    def test_and_a_catastrophe_is_refused_all_the_same(self) -> None:
+        self.assertTrue(self.link.available())
+        self.bridge.close()
+        _, calls = self.run_tool("terminal", {"command": "rm -rf /"})
+        self.assertEqual(calls, [])
 
 
 class FindingTheApp(unittest.TestCase):

@@ -22,11 +22,14 @@ import { createBridge } from './bridge'
 import { removeBridgeFile, writeBridgeFile } from './bridge-file'
 import { createConsent, createFileConsentStore } from './consent'
 import { runCommand } from './exec'
+import { createGuardian, type GuardianDecision, loadRuleTable, type RuleTable } from './guardian'
 import { createLedger } from './ledger'
 import { createNativeConsent, type NativeDialog } from './native-consent'
 import { createPluginInstaller, type PluginInstallDeps } from './plugin-install'
 import { createRadar, type RadarDeps, type RadarSample } from './radar'
+import { createFileSettingsStore, createSettings } from './settings'
 import { createShield } from './shield'
+import { createFileStatsStore, createStats } from './stats'
 import {
   clampTripMinutes,
   createFileTeleportStore,
@@ -155,10 +158,27 @@ export function createHermoso(deps: HermosoDeps) {
     store: createFileTeleportStore(path.join(deps.dataDir, 'hermoso', 'teleport.json'))
   })
 
+  // ── what Hermoso has done for the person, and what the person switched on or off ──
+
+  const stats = createStats({ log, store: createFileStatsStore(path.join(deps.dataDir, 'hermoso', 'stats.json')) })
+  const settings = createSettings(createFileSettingsStore(path.join(deps.dataDir, 'hermoso', 'settings.json')))
+
   // ── shield: the agent stands still while the VPN is required and the tunnel is not up ──
 
+  let frozenSince: null | number = null
+
   const shield = createShield({
-    onChange: state => broadcast(EVENT_CHANNEL, { state, type: 'shield' }),
+    onChange: state => {
+      if (state.frozen && frozenSince === null) {
+        frozenSince = Date.now()
+        stats.bump('freezes')
+      } else if (!state.frozen && frozenSince !== null) {
+        stats.bump('frozenSeconds', Math.round((Date.now() - frozenSince) / 1000))
+        frozenSince = null
+      }
+
+      broadcast(EVENT_CHANNEL, { state, type: 'shield' })
+    },
     vpn: () => deps.vpn.getState()
   })
 
@@ -227,6 +247,50 @@ export function createHermoso(deps: HermosoDeps) {
     store: createFileConsentStore(path.join(deps.dataDir, 'hermoso', 'consent.json'))
   })
 
+  // ── guardian: a person between the agent and the few things that cannot be undone ──
+
+  let ruleTable: null | RuleTable = null
+
+  const COUNTED: Record<GuardianDecision, string> = {
+    allowed: 'guardianAllowed',
+    always: 'guardianAllowed',
+    blocked: 'guardianBlocked',
+    denied: 'guardianDenied',
+    remembered: 'guardianAllowed',
+    timeout: 'guardianDenied'
+  }
+
+  const guardian = createGuardian({
+    consent,
+    enabled: () => settings.get().guardian,
+    journal: event => {
+      stats.event(event)
+      stats.bump(COUNTED[event.decision])
+
+      if (event.decision !== 'blocked' && event.decision !== 'remembered') {
+        stats.bump('guardianAsked')
+      }
+
+      broadcast(EVENT_CHANNEL, { event, type: 'guardian' })
+    },
+    rules: () => (ruleTable ??= loadRuleTable(deps.pluginSource))
+  })
+
+  const guardianView = () => {
+    const { counters, recent } = stats.get()
+
+    return {
+      enabled: settings.get().guardian,
+      events: recent,
+      totals: {
+        allowed: counters.guardianAllowed ?? 0,
+        asked: counters.guardianAsked ?? 0,
+        blocked: counters.guardianBlocked ?? 0,
+        denied: counters.guardianDenied ?? 0
+      }
+    }
+  }
+
   const installer = createPluginInstaller(deps.pluginSource, { log, runHermes: deps.runHermes })
   const bridge = createBridge({ log })
 
@@ -289,6 +353,9 @@ export function createHermoso(deps: HermosoDeps) {
   // The plugin asks before it acts: is the agent allowed to move right now?
   bridge.route('GET', '/v1/shield/state', async () => ({ ...(await freshVerdict()), ok: true }))
 
+  // The plugin recognised something risky and asks the person before it runs.
+  bridge.route('POST', '/v1/guardian/ask', ({ body }) => guardian.ask(body))
+
   bridge.route('POST', '/v1/teleport/jump', ({ body }) => agentJump(body))
   bridge.route('POST', '/v1/teleport/home', () => teleport.home('agent'))
   bridge.route('GET', '/v1/teleport/state', () => ({ ok: true, state: teleport.getState() }))
@@ -307,6 +374,13 @@ export function createHermoso(deps: HermosoDeps) {
     'consent.answer': params => consent.answer(String(asRecord(params).id), asRecord(params).answer),
     'consent.pending': () => consent.pending(),
     'consent.revoke': params => consent.revoke(String(asRecord(params).key)),
+    'guardian.enable': params => {
+      settings.set({ guardian: asRecord(params).on === true })
+
+      return guardianView()
+    },
+
+    'guardian.state': () => guardianView(),
     'shield.lockdown.get': () => deps.mullvad.lockdownGet(),
 
     'shield.lockdown.set': async params => {
@@ -341,6 +415,7 @@ export function createHermoso(deps: HermosoDeps) {
     },
 
     'shield.state': () => freshVerdict(),
+    'stats.get': () => stats.get(),
     'teleport.destinations': () => teleport.destinations(),
     'teleport.home': () => teleport.home('user'),
     'teleport.jump': params => teleport.jump(parseJump(params, 'user')),
@@ -350,6 +425,8 @@ export function createHermoso(deps: HermosoDeps) {
   return {
     /** On the way out: bring the machine home, but never hold the quit for more than a few seconds. */
     async beforeQuit(): Promise<void> {
+      stats.flush()
+
       if (!teleport.needsQuitWait()) {
         return
       }
@@ -374,6 +451,7 @@ export function createHermoso(deps: HermosoDeps) {
 
     async dispose(): Promise<void> {
       teleport.dispose()
+      stats.flush()
       timers.forEach(timer => clearInterval(timer))
       timers = []
 

@@ -187,6 +187,7 @@ export interface RadarDeps {
 
 const PROCESS_LIST_SCRIPT =
   "Get-CimInstance Win32_Process | ForEach-Object { '{0},{1},{2}' -f $_.ProcessId, $_.ParentProcessId, $_.Name }"
+
 const PROCESS_TTL_MS = 10_000
 const EXEC_TIMEOUT_MS = 8_000
 
@@ -217,6 +218,7 @@ export function createRadar(deps: RadarDeps) {
   return {
     async sample(): Promise<RadarSample> {
       const at = now()
+
       const tunnelAddresses = (deps.interfaces()[deps.tunnelInterface()] ?? []).map(entry =>
         entry.address.toLowerCase().replace(/%\w+$/, '')
       )

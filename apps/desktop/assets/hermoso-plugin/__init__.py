@@ -3,8 +3,9 @@
 Registered by the Hermes plugin loader (``register(ctx)``). It registers its tools always, but they are shown to the
 model only while a Hermoso desktop app is running and answering (see ``bridge.Link.available``): in any other
 setting (the official Hermes app sharing this data folder, a terminal, cron) the plugin stays out of the way.
-The shield (see ``shield``) holds the agent while the VPN is required and its tunnel is down; it too does nothing
-when no app is there to ask.
+The shield (see ``shield``) holds the agent while the VPN is required and its tunnel is down; the guardian (see
+``guardian``) puts the person between the agent and the few things that cannot be undone. Both do nothing when no
+app is there to ask.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import shield, teleport
+from . import guardian, shield, teleport
 from .bridge import Link
 
 logger = logging.getLogger(__name__)
@@ -36,4 +37,5 @@ def register(ctx: Any) -> None:
     link = Link(version=__version__)
     teleport.register(ctx, link)
     shield.register(ctx, link)
+    guardian.register(ctx, link)
     logger.info("hermoso: registered (tools are shown while a Hermoso app is running)")

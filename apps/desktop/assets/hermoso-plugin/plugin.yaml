@@ -1,6 +1,6 @@
 name: hermoso
-version: 0.3.0
-description: "Hermoso's protection for the agent: Shield (the agent stands still while the required VPN tunnel is down) and Teleport (change the Mullvad exit country on request, with the user's yes asked in Hermoso itself, and come back by itself). Talks to the running Hermoso desktop app over a local, token-protected bridge; its tools are hidden from the model, and the shield does nothing, unless that app is running."
+version: 0.4.0
+description: "Hermoso's protection for the agent: Guardian (a person is asked before the risky things the agent runs or writes), Shield (the agent stands still while the required VPN tunnel is down) and Teleport (change the Mullvad exit country on request, with the user's yes asked in Hermoso itself, and come back by itself). Talks to the running Hermoso desktop app over a local, token-protected bridge; its tools are hidden from the model, and the shield does nothing, unless that app is running."
 author: "Hermoso"
 provides_hooks:
   - pre_tool_call
