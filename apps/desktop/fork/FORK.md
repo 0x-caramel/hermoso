@@ -36,6 +36,19 @@ The user-data folder and the single-instance lock stay upstream's (`appNamePasca
 purpose): Hermoso, Hermes (Mullvad) and the official Hermes share one profile, and never run two
 backends on it.
 
+## Working on the fork
+
+Normal work is committed on `hermoso` as usual (`feat(...)`, `fix(...)`). Two kinds of commits are
+derived, never written by hand, and must stay on top of the stack: `brand:` (the logo art) and
+`generated:` (files a repo script produces, listed in `generated.json`). After committing normal work:
+
+```
+node apps/desktop/fork/sync.mjs --restack     same official base: replay the normal commits, regenerate the derived ones on top
+```
+
+It needs a clean tree, runs in about 20 seconds, and does not verify, build or keep a backup branch.
+Before a build, the working tree must hold the Hermoso art (it does after a restack).
+
 ## When the official Hermes updates
 
 The fork is a short stack of commits on one official commit: branch `hermoso-base` records that

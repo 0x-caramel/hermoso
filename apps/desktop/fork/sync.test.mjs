@@ -481,6 +481,42 @@ scenario('refuses to move to an OLDER official version unless forced', w => {
   assert.match(output(r), /OLDER/)
 })
 
+scenario('--restack puts the derived commits back on top of normal work committed above them', w => {
+  const before = state(w)
+
+  // normal work, committed on top of the brand and generated commits (the order sync.mjs would refuse)
+  put(w.fork, 'apps/desktop/electron/extra.ts', 'export const extra = 1\n')
+  commit(w.fork, 'feat: extra')
+
+  const refused = sync(w, ['--check'])
+
+  assert.equal(refused.status, 2, output(refused))
+  assert.match(output(refused), /derived/)
+
+  const r = sync(w, ['--restack'])
+
+  assert.equal(r.status, 0, output(r))
+
+  const after = state(w)
+
+  assert.equal(after.main, before.main, 'the official base does not move')
+  assert.equal(after.status, '', 'the working tree is clean')
+  assert.deepEqual(after.branches, before.branches, 'no backup or scratch branch is left behind')
+  assert.ok(fs.existsSync(path.join(w.desktop, 'electron', 'extra.ts')), 'the normal commit is kept')
+
+  assert.deepEqual(
+    git(w.fork, 'log', '--format=%s', `${w.base}..${w.branch}`)
+      .split('\n')
+      .map(subject => subject.replace(/ \(regenerated on [0-9a-f]+\)$/, '')),
+    ['generated: key catalog', 'brand: recolor the logo art to #E100FF', 'feat: extra', 'feat: fork tooling', 'feat: vpn gate']
+  )
+
+  // and it is a valid stack again: the ordinary check passes
+  const check = sync(w, ['--check'])
+
+  assert.equal(check.status, 0, output(check))
+})
+
 scenario(
   'a fork with its own identity (Hermoso) moves on its own branches, leaves the other fork alone and draws its own art',
   w => {

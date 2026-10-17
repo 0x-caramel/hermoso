@@ -119,21 +119,32 @@ const emojibaseAssets = () => ({
 })
 
 // Fork: a fork that renamed itself (fork/identity.json, selected by HERMES_FORK_IDENTITY) writes its own name
-// across an empty chat; without the variable (tests, upstream builds) the wordmark stays "HERMES AGENT".
-const forkWordmark: null | string = (() => {
+// across an empty chat and in the window title; without the variable (tests, upstream builds) the wordmark stays
+// "HERMES AGENT" and the title "Hermes".
+const forkIdentity: { displayName?: string; wordmark?: string } = (() => {
   try {
     const file = process.env.HERMES_FORK_IDENTITY
 
-    return file ? (JSON.parse(fs.readFileSync(file, 'utf8')).wordmark ?? null) : null
+    return file ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}
   } catch {
-    return null
+    return {}
   }
 })()
+
+const forkWordmark: null | string = forkIdentity.wordmark ?? null
+
+const forkTitle = () => ({
+  name: 'fork-title',
+  transformIndexHtml: (html: string) =>
+    forkIdentity.displayName
+      ? html.replace('<title>Hermes</title>', `<title>${forkIdentity.displayName.replace(/[&<>]/g, ' ')}</title>`)
+      : html
+})
 
 export default defineConfig(({ command }) => ({
   base: './',
   define: { __FORK_WORDMARK__: JSON.stringify(forkWordmark) },
-  plugins: [react(), babel({ presets: [compilerPreset()] }), tailwindcss(), emojibaseAssets()],
+  plugins: [react(), babel({ presets: [compilerPreset()] }), tailwindcss(), emojibaseAssets(), forkTitle()],
   css: {
     // Pin an explicit (empty) PostCSS config. Tailwind is handled entirely by
     // `@tailwindcss/vite`, so the renderer needs no PostCSS plugins — and

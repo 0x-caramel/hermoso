@@ -75,6 +75,11 @@
       "text": "displayName: FORK_NAME",
       "min": 1,
       "why": "the self-update notices speak in the fork's own name"
+    },
+    {
+      "text": "title: APP_NAME,",
+      "min": 4,
+      "why": "every window is titled with the app's own name (Hermoso), not a literal 'Hermes'"
     }
   ],
   "electron/preload.ts": [
@@ -129,6 +134,11 @@
       "text": "__FORK_WORDMARK__",
       "min": 1,
       "why": "the wordmark a renamed fork writes across an empty chat comes from its identity, at build time"
+    },
+    {
+      "text": "forkTitle",
+      "min": 2,
+      "why": "the page title (which becomes the window title once the page loads) carries the fork's name"
     }
   ],
   "src/components/chat/intro.tsx": [

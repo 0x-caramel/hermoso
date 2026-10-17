@@ -13,6 +13,9 @@
  *                                     hook check, typecheck, unit tests, e2e), then discard it
  *   node fork/sync.mjs                adopt: same as --rehearse, then rebuild the app, refresh the
  *                                     Start Menu shortcut and move the fork onto the new base
+ *   node fork/sync.mjs --restack      after committing normal work on top of the derived commits: same
+ *                                     official base, the normal commits replayed in order, the brand art and the
+ *                                     generated files regenerated on top again (no verify, no rebuild, no backup)
  *
  * Other switches: --no-e2e (skip the slow e2e), --no-verify (skip typecheck, unit tests and e2e),
  * --no-build (adopt the source but do not rebuild the app), --force (allow an older target).
@@ -180,7 +183,7 @@ function inProgressOperation() {
  * whose subject starts with "brand:" (the logo art) or "generated:" (files a script derives from
  * the official code, like the i18n key catalog) hold derived files that would only ever conflict.
  */
-export function readForkStack() {
+export function readForkStack({ allowMixed = false } = {}) {
   const shas = gitOut(['rev-list', '--reverse', `${BASE_BRANCH}..${FORK_BRANCH}`])
     .split('\n')
     .filter(Boolean)
@@ -192,7 +195,7 @@ export function readForkStack() {
 
   const firstDerived = commits.findIndex(c => c.derived)
 
-  if (firstDerived !== -1 && commits.slice(firstDerived).some(c => !c.derived)) {
+  if (!allowMixed && firstDerived !== -1 && commits.slice(firstDerived).some(c => !c.derived)) {
     throw new Refusal(
       `a derived ("${DERIVED_PREFIXES.join('" / "')}") commit sits below a normal fork commit ` +
         `(${commits.find((c, i) => i > firstDerived && !c.derived).subject}). ` +
@@ -583,7 +586,8 @@ function parseArgs(argv) {
     noBuild: false,
     noE2e: false,
     noVerify: false,
-    rehearse: false
+    rehearse: false,
+    restack: false
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -591,6 +595,7 @@ function parseArgs(argv) {
 
     if (arg === '--check') options.check = true
     else if (arg === '--rehearse') options.rehearse = true
+    else if (arg === '--restack') options.restack = true
     else if (arg === '--no-build') options.noBuild = true
     else if (arg === '--no-e2e') options.noE2e = true
     else if (arg === '--no-verify') options.noVerify = true
@@ -628,6 +633,12 @@ export function main(argv = process.argv.slice(2)) {
 
   assertForkIsAStack()
 
+  if (options.restack) {
+    // History housekeeping only: nothing is verified or rebuilt, and the app may stay open.
+    options.noBuild = true
+    options.noVerify = true
+  }
+
   const adopt = !options.check && !options.rehearse
   const branch = currentBranch()
 
@@ -643,10 +654,20 @@ export function main(argv = process.argv.slice(2)) {
     throw new Refusal(`${IDENTITY.displayName} is running; close it first (the build replaces its files)`)
   }
 
-  const stack = readForkStack()
+  const stack = readForkStack({ allowMixed: options.restack })
   const base = gitOut(['rev-parse', BASE_BRANCH])
 
   say(`fork:    ${FORK_BRANCH}  (${stack.replay.length} commit(s) to replay, ${stack.derived.length} derived commit(s) to regenerate, on official ${short(base)})`)
+
+  if (options.restack) {
+    if (options.check || options.rehearse) {
+      throw new Refusal('--restack does not combine with --check or --rehearse')
+    }
+
+    git(['update-ref', TARGET_REF, base])
+
+    return replayAndVerify({ base, options, stack, target: { label: 'the current base', sha: base } })
+  }
 
   const target = fetchTarget(options.from)
   const targetDate = Number(gitOut(['log', '-1', '--format=%ct', target.sha]))
@@ -846,14 +867,24 @@ function replayAndVerify({ base, options, stack, target }) {
     throw error
   }
 
-  // Everything passed: move the refs. The previous fork tip stays reachable as a backup branch.
+  // Everything passed: move the refs. The previous fork tip stays reachable as a backup branch
+  // (not for a restack: the normal commits are kept as they are and the derived ones are regenerated).
   const backup = `backup/${FORK_BRANCH}-${stamp()}`
 
-  git(['branch', backup, oldTip])
+  if (!options.restack) {
+    git(['branch', backup, oldTip])
+  }
+
   git(['branch', '-f', BASE_BRANCH, target.sha])
   git(['branch', '-f', FORK_BRANCH, syncBranch])
   git(['switch', FORK_BRANCH])
   git(['branch', '-D', syncBranch])
+
+  if (options.restack) {
+    say('', `Done. ${stack.replay.length} normal commit(s) replayed on official ${short(target.sha)}, the derived commits regenerated on top.`)
+
+    return 0
+  }
 
   say(
     '',
