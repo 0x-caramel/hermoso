@@ -23,8 +23,9 @@ TOOLSET = "hermoso"
 TELEPORT = {
     "name": "hermoso_teleport",
     "description": (
-        "Temporarily move this computer's internet exit to another country through the Mullvad VPN, so a site or "
-        "service sees you from there (geo-blocked content, regional prices, how a page looks from abroad). "
+        "Move this computer's internet exit to another country. "
+        "It goes through the Mullvad VPN, so a site or service sees you from there "
+        "(geo-blocked content, regional prices, how a page looks from abroad). "
         "It changes the exit of the WHOLE computer, not only this chat, and the user is asked to approve it in "
         "Hermoso (unless they allowed that country before): the call waits for their answer, and a no is final. "
         "Use it only when the task really needs another location, and say why in `reason`. It returns home by itself "
@@ -58,7 +59,7 @@ TELEPORT = {
 RETURN_HOME = {
     "name": "hermoso_return_home",
     "description": (
-        "Bring the internet exit back to where it was before hermoso_teleport. Call it as soon as the task that "
+        "Bring the internet exit back home after hermoso_teleport. Call it as soon as the task that "
         "needed another country is done; it does nothing if you are already home."
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
@@ -67,14 +68,15 @@ RETURN_HOME = {
 WHERE_AM_I = {
     "name": "hermoso_where_am_i",
     "description": (
-        "Where the internet exit is right now: at home, or teleported (which country, since when, when it returns)."
+        "Say where the internet exit is now: home or teleported. "
+        "If teleported: which country, since when, and when it returns."
     ),
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
 EXITS = {
     "name": "hermoso_exits",
-    "description": "The countries (and their cities) Mullvad can exit from, with the codes hermoso_teleport accepts.",
+    "description": "List the countries and cities one can teleport to. It gives the codes hermoso_teleport accepts.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 

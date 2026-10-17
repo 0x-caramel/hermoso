@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Scripted stand-in for the `mullvad` CLI, for the VPN-gate e2e spec.
+ * Scripted stand-in for the `mullvad` CLI, for the VPN-gate and Teleport e2e specs.
  *
  * The desktop runs it through HERMES_MULLVAD_CLI (a `.mjs` override is executed
  * with the app's own Node runtime, so this works on every platform). State lives
@@ -10,9 +10,10 @@
  *   {
  *     "tunnel": "disconnected" | "connecting" | "connected" | "blocked",
  *     "account": true,             // false → `account get` says not logged in
- *     "connectDelayMs": 1500,      // how long `connect` takes to reach connected
+ *     "connectDelayMs": 1500,      // how long `connect` (or a relay change) takes to reach connected
  *     "failConnect": false,        // true → `connect` fails like a dead daemon
  *     "stuck": false,              // true → connect is accepted but never completes
+ *     "relay": "country se",       // the exit location constraint, as `relay get` prints it
  *     "connectedAt": null,         // set by the script
  *     "log": []                    // every invocation, appended by the script
  *   }
@@ -31,9 +32,9 @@ const state = JSON.parse(fs.readFileSync(statePath, 'utf8'))
 state.log = [...(state.log ?? []), args.join(' ')]
 
 // A spec edits the file while the app polls this script, so write back only what this
-// invocation owns (the call log and the tunnel it moved) over a fresh read, never the
+// invocation owns (the call log and the tunnel/relay it moved) over a fresh read, never the
 // whole snapshot it started from.
-const original = { connectedAt: state.connectedAt, tunnel: state.tunnel }
+const original = { connectedAt: state.connectedAt, relay: state.relay, tunnel: state.tunnel }
 
 const save = () => {
   const fresh = JSON.parse(fs.readFileSync(statePath, 'utf8'))
@@ -45,6 +46,10 @@ const save = () => {
     fresh.connectedAt = state.connectedAt
   }
 
+  if (state.relay !== original.relay) {
+    fresh.relay = state.relay
+  }
+
   fs.writeFileSync(statePath, JSON.stringify(fresh, null, 2))
 }
 
@@ -53,15 +58,74 @@ if (state.tunnel === 'connecting' && !state.stuck && Date.now() - state.connecte
   state.tunnel = 'connected'
 }
 
-const [command, sub] = args
+// ── where the relay constraint puts the exit ──
+
+const PLACES = {
+  de: { city: 'Berlin', code: 'ber', country: 'Germany' },
+  fr: { city: 'Paris', code: 'par', country: 'France' },
+  no: { city: 'Oslo', code: 'osl', country: 'Norway' },
+  se: { city: 'Gothenburg', code: 'got', country: 'Sweden' }
+}
+
+/** The exit relay a constraint such as `country de` or `city got, se` lands on. */
+function exitOf(relay) {
+  const text = String(relay ?? 'country se').trim().toLowerCase()
+  const host = /hostname (\S+)/.exec(text)?.[1]
+  const city = /^city (\w+), (\w\w)/.exec(text)
+  const country = /^country (\w\w)$/.exec(text)
+  const cc = host?.slice(0, 2) ?? city?.[2] ?? country?.[1] ?? 'se'
+  const place = PLACES[cc] ?? PLACES.se
+  const code = host?.split('-')[1] ?? city?.[1] ?? place.code
+
+  return { city: place.city, code, country: place.country, host: host ?? `${cc}-${code}-wg-001` }
+}
+
+const printLocation = parts => {
+  if (parts[0] === 'any') {
+    return 'any'
+  }
+
+  if (parts.length === 1 && /^\w\w-\w+-\w+-\d+$/.test(parts[0])) {
+    return `city ${parts[0].split('-')[1]}, ${parts[0].slice(0, 2)}, hostname ${parts[0]}`
+  }
+
+  if (parts.length === 1) {
+    return `country ${parts[0]}`
+  }
+
+  return parts.length === 2 ? `city ${parts[1]}, ${parts[0]}` : `city ${parts[1]}, ${parts[0]}, hostname ${parts[2]}`
+}
+
+const [command, sub, third] = args
 
 if (command === 'status') {
   save()
 
-  if (state.tunnel === 'connected') {
+  const json = args.includes('--json') || args.includes('-j')
+  const exit = exitOf(state.relay)
+
+  if (json) {
+    if (state.tunnel === 'connected') {
+      console.log(
+        JSON.stringify({
+          details: {
+            endpoint: { address: '198.51.100.1:51820', protocol: 'udp', tunnel_interface: 'Mullvad' },
+            location: { city: exit.city, country: exit.country, hostname: exit.host, ipv4: '203.0.113.7' }
+          },
+          state: 'connected'
+        })
+      )
+    } else if (state.tunnel === 'connecting') {
+      // the real daemon prints nothing for a couple of seconds while a relay change reconnects
+    } else if (state.tunnel === 'blocked') {
+      console.log(JSON.stringify({ details: { cause: 'authentication failed' }, state: 'error' }))
+    } else {
+      console.log(JSON.stringify({ details: { location: { city: 'Naples', country: 'Italy' } }, state: 'disconnected' }))
+    }
+  } else if (state.tunnel === 'connected') {
     console.log('Connected')
-    console.log('    Relay:                se-got-wg-001')
-    console.log('    Visible location:     Sweden, Gothenburg. IPv4: 203.0.113.7')
+    console.log(`    Relay:                ${exit.host}`)
+    console.log(`    Visible location:     ${exit.country}, ${exit.city}. IPv4: 203.0.113.7`)
   } else if (state.tunnel === 'connecting') {
     console.log('Connecting to WireGuard 198.51.100.1:51820/UDP...')
   } else if (state.tunnel === 'blocked') {
@@ -87,14 +151,40 @@ if (command === 'status') {
   save()
 } else if (command === 'relay' && sub === 'list') {
   save()
+  console.log('France (fr)')
+  console.log('\tParis (par) @ 48.85°N, 2.35°E')
+  console.log('\t\tfr-par-wg-001 (185.213.155.10, 2a03:1b20:6:f011::a01f) - WireGuard, hosted by Blix (rented)')
   console.log('Germany (de)')
   console.log('\tBerlin (ber) @ 52.52°N, 13.40°E')
   console.log('\t\tde-ber-wg-001 (185.213.155.73, 2a03:1b20:6:f011::a01f) - WireGuard, hosted by Blix (rented)')
+  console.log('Norway (no)')
+  console.log('\tOslo (osl) @ 59.91°N, 10.75°E')
+  console.log('\t\tno-osl-wg-001 (185.213.155.20, 2a03:1b20:6:f011::a02f) - WireGuard, hosted by Blix (rented)')
   console.log('Sweden (se)')
   console.log('\tGothenburg (got) @ 57.71°N, 11.97°E')
   console.log('\t\tse-got-wg-001 (185.213.154.66, 2a03:1b20:5:f011::a01f) - WireGuard, hosted by 31173 (rented)')
   console.log('\tStockholm (sto) @ 59.33°N, 18.06°E')
   console.log('\t\tse-sto-wg-001 (185.65.135.66, 2a03:1b20:2:f011::a01f) - WireGuard, hosted by Blix (rented)')
+} else if (command === 'relay' && sub === 'get') {
+  save()
+  console.log('Generic constraints')
+  console.log(`    Location:               ${state.relay ?? 'country se'}`)
+  console.log('    Provider(s):            any')
+  console.log('    Ownership:              any')
+  console.log('WireGuard constraints')
+  console.log('    IP protocol:            any')
+  console.log('    Multihop state:         disabled')
+  console.log('    Multihop entry:         country it')
+} else if (command === 'relay' && sub === 'set' && third === 'location') {
+  state.relay = printLocation(args.slice(3))
+
+  // A live tunnel reconnects by itself to the new relay.
+  if (state.tunnel === 'connected') {
+    state.tunnel = 'connecting'
+    state.connectedAt = Date.now()
+  }
+
+  save()
 } else if (command === 'relay' && sub === 'set') {
   save()
 } else {

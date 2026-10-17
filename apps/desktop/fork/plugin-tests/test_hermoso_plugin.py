@@ -150,6 +150,16 @@ class Registration(unittest.TestCase):
             self.assertEqual(schema["parameters"]["type"], "object")
         self.assertEqual(ctx.tools["hermoso_teleport"]["schema"]["parameters"]["required"], ["country", "reason"])
 
+    def test_the_first_sentence_says_it_all_because_that_is_all_the_hermes_catalog_lists(self) -> None:
+        # Hermes defers a plugin's tools behind tool_search and lists each by its first sentence, clipped at 60 characters.
+        plugin = load_plugin()
+        ctx = FakeCtx()
+        plugin.register(ctx)
+        for name, tool in ctx.tools.items():
+            first = tool["schema"]["description"].split(". ")[0].strip()
+            self.assertLessEqual(len(first), 60, f"{name}: {first!r}")
+            self.assertGreaterEqual(len(first), 20, name)
+
     def test_the_tools_are_hidden_when_no_app_is_running(self) -> None:
         plugin = load_plugin()
         ctx = FakeCtx()
