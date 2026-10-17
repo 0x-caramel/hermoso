@@ -52,6 +52,8 @@ export interface DaemonOptions {
   constraint?: RelayLocation
   /** `relay get` prints a form that cannot be put back (a custom list). */
   customList?: boolean
+  /** Mullvad's "Always require VPN" at the start (off when left out). */
+  lockdown?: boolean
 }
 
 /** A tiny Mullvad daemon: a relay constraint, a tunnel that takes a couple of polls to come up, and a call log. */
@@ -60,12 +62,33 @@ export function fakeDaemon(options: DaemonOptions = {}) {
   let constraint: RelayLocation = options.constraint ?? { country: 'no', kind: 'country' }
   let tunnel: MullvadStatusDetails['state'] = options.connected === false ? 'disconnected' : 'connected'
   let pending = 0
+  let lockdown = options.lockdown ?? false
 
-  const fail = { connect: false, refuse: null as null | string, relayGet: false, set: false, stuck: false }
+  const fail = {
+    connect: false,
+    lockdown: false,
+    refuse: null as null | string,
+    relayGet: false,
+    set: false,
+    stuck: false
+  }
+
+  const place = () => {
+    const where = constraint
+
+    if (where.kind === 'any') {
+      return { city: null, country: null }
+    }
+
+    const country = RELAYS.find(entry => entry.code === where.country)
+    const city = where.kind === 'country' ? null : country?.cities.find(entry => entry.code === where.city)
+
+    return { city: city?.name ?? null, country: country?.name ?? null }
+  }
 
   const details = (): MullvadStatusDetails => ({
-    city: null,
-    country: null,
+    city: tunnel === 'connected' ? place().city : null,
+    country: tunnel === 'connected' ? place().country : null,
     entryHostname: null,
     hostname: tunnel === 'connected' ? exitHost(constraint) : null,
     state: tunnel,
@@ -97,6 +120,24 @@ export function fakeDaemon(options: DaemonOptions = {}) {
       calls.push('relays')
 
       return RELAYS
+    },
+
+    async lockdownGet() {
+      calls.push('lockdown-get')
+
+      return fail.lockdown ? null : lockdown
+    },
+
+    async lockdownSet(on: boolean) {
+      calls.push(`lockdown:${on ? 'on' : 'off'}`)
+
+      if (fail.lockdown) {
+        return { code: 1, stderr: 'Error: Failed to connect to daemon', stdout: '' }
+      }
+
+      lockdown = on
+
+      return ok
     },
 
     async relayGet() {
@@ -148,6 +189,7 @@ export function fakeDaemon(options: DaemonOptions = {}) {
     client,
     constraint: () => constraint,
     fail,
+    lockdown: () => lockdown,
     tunnel: () => tunnel
   }
 }

@@ -414,6 +414,16 @@ export function relayHostCountry(hostname: null | string): null | string {
   return /^([a-z]{2})-/.exec(String(hostname ?? '').toLowerCase())?.[1] ?? null
 }
 
+/**
+ * `mullvad lockdown-mode get` → whether Mullvad blocks all traffic while the tunnel is down ("Always require
+ * VPN" in the app). The only real guarantee against a leak when the tunnel drops. `null` for anything else.
+ */
+export function parseLockdown(output: string): boolean | null {
+  const match = /block traffic when the vpn is disconnected:\s*(on|off)\b/i.exec(String(output ?? ''))
+
+  return match ? match[1].toLowerCase() === 'on' : null
+}
+
 /** Classify why a CLI call failed, from its spawn error and stderr. */
 export function classifyCliFailure(result: CliResult): MullvadFailure {
   if (result.error === 'missing') {
@@ -600,6 +610,17 @@ export function createMullvadClient({
 
       return result.code === 0 ? parseRelayList(result.stdout) : []
     },
+
+    /** Mullvad's "Always require VPN" (lockdown mode), or null when it could not be read. */
+    async lockdownGet(): Promise<boolean | null> {
+      const result = await exec(['lockdown-mode', 'get'], STATUS_TIMEOUT_MS)
+
+      return result.code === 0 ? parseLockdown(result.stdout) : null
+    },
+
+    /** Turn "Always require VPN" on or off. The person's own choice, made in Hermoso's Shield section. */
+    lockdownSet: (on: boolean): Promise<CliResult> =>
+      exec(['lockdown-mode', 'set', on ? 'on' : 'off'], COMMAND_TIMEOUT_MS),
 
     /** The exit location constraint, or the failure that prevented reading it. Exactly one is non-null. */
     async relayGet(): Promise<{ constraints: null | RelayConstraints; failure: MullvadFailure | null }> {

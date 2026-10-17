@@ -12,6 +12,7 @@
  * `prepare` a Hermes home before every backend spawn, answer `hermoso:call`, wait for the way home on quit.
  */
 
+import os from 'node:os'
 import path from 'node:path'
 
 import type { MullvadClient } from '../mullvad'
@@ -20,8 +21,12 @@ import type { VpnController } from '../vpn-controller'
 import { createBridge } from './bridge'
 import { removeBridgeFile, writeBridgeFile } from './bridge-file'
 import { createConsent, createFileConsentStore } from './consent'
+import { runCommand } from './exec'
+import { createLedger } from './ledger'
 import { createNativeConsent, type NativeDialog } from './native-consent'
 import { createPluginInstaller, type PluginInstallDeps } from './plugin-install'
+import { createRadar, type RadarDeps, type RadarSample } from './radar'
+import { createShield } from './shield'
 import {
   clampTripMinutes,
   createFileTeleportStore,
@@ -41,21 +46,34 @@ export interface HermosoWindow {
 }
 
 export interface HermosoDeps {
+  /** Shown in the shield report. */
+  appVersion?: string
   /** The app's data folder: Hermoso keeps its own files under `<dataDir>/hermoso`. */
   dataDir: string
   /** For the native consent dialog, used only when no window shows a request in time. */
   dialog: NativeDialog
+  /** Runs `netstat` and the process list for the radar. */
+  exec?: RadarDeps['exec']
+  /** `os.networkInterfaces()`. */
+  interfaces?: RadarDeps['interfaces']
   log: (message: string) => void
   mullvad: Pick<
     MullvadClient,
-    'connect' | 'disconnect' | 'listRelays' | 'relayGet' | 'setRelayLocation' | 'statusDetails'
+    | 'connect'
+    | 'disconnect'
+    | 'listRelays'
+    | 'lockdownGet'
+    | 'lockdownSet'
+    | 'relayGet'
+    | 'setRelayLocation'
+    | 'statusDetails'
   >
   /** Where the plugin's files are inside the app. */
   pluginSource: string
   runHermes: PluginInstallDeps['runHermes']
   /** Waiting between tunnel polls; tests pass a fake one. */
   sleep?: (ms: number) => Promise<void>
-  vpn: Pick<VpnController, 'holdTransition' | 'refresh'>
+  vpn: Pick<VpnController, 'getState' | 'holdTransition' | 'refresh'>
   /** The app's open windows. */
   windows: () => HermosoWindow[]
 }
@@ -63,6 +81,9 @@ export interface HermosoDeps {
 export const EVENT_CHANNEL = 'hermoso:event'
 
 const QUIT_WAIT_MS = 8_000
+// How often the shield looks at the VPN controller, and the radar at the machine's connections.
+const SHIELD_CHECK_MS = 1_000
+const RADAR_SAMPLE_MS = 10_000
 // A plugin that has not asked for this long is not talking to us any more.
 const AGENT_STALE_MS = 60_000
 
@@ -130,6 +151,55 @@ export function createHermoso(deps: HermosoDeps) {
     sleep: deps.sleep,
     store: createFileTeleportStore(path.join(deps.dataDir, 'hermoso', 'teleport.json'))
   })
+
+  // ── shield: the agent stands still while the VPN is required and the tunnel is not up ──
+
+  const shield = createShield({
+    onChange: state => broadcast(EVENT_CHANNEL, { state, type: 'shield' }),
+    vpn: () => deps.vpn.getState()
+  })
+
+  const ledger = createLedger()
+  let tunnelInterface = 'Mullvad'
+  let latestSample: null | RadarSample = null
+
+  const radar = createRadar({
+    exec: deps.exec ?? runCommand,
+    interfaces: deps.interfaces ?? (() => os.networkInterfaces() as ReturnType<RadarDeps['interfaces']>),
+    roots: () => [process.pid],
+    tunnelInterface: () => tunnelInterface
+  })
+
+  /** One look at the machine: the app's connections, judged and counted. */
+  const lookAtTheMachine = async (): Promise<RadarSample> => {
+    const status = await deps.mullvad.statusDetails().catch(() => null)
+
+    tunnelInterface = status?.details?.tunnelInterface ?? tunnelInterface
+
+    const sample = await radar.sample()
+
+    ledger.record(sample, shield.check())
+    latestSample = sample
+
+    return sample
+  }
+
+  let timers: ReturnType<typeof setInterval>[] = []
+
+  const startWatching = (): void => {
+    if (timers.length > 0) {
+      return
+    }
+
+    timers = [
+      setInterval(() => void shield.check(), SHIELD_CHECK_MS),
+      setInterval(() => void lookAtTheMachine().catch(() => {}), RADAR_SAMPLE_MS)
+    ]
+
+    for (const timer of timers) {
+      timer.unref?.()
+    }
+  }
 
   const consent = createConsent({
     log,
@@ -201,6 +271,9 @@ export function createHermoso(deps: HermosoDeps) {
     return { app: 'hermoso', ok: true, pid: process.pid }
   })
 
+  // The plugin asks before it acts: is the agent allowed to move right now?
+  bridge.route('GET', '/v1/shield/state', () => ({ ...shield.check(), ok: true }))
+
   bridge.route('POST', '/v1/teleport/jump', ({ body }) => agentJump(body))
   bridge.route('POST', '/v1/teleport/home', () => teleport.home('agent'))
   bridge.route('GET', '/v1/teleport/state', () => ({ ok: true, state: teleport.getState() }))
@@ -219,6 +292,40 @@ export function createHermoso(deps: HermosoDeps) {
     'consent.answer': params => consent.answer(String(asRecord(params).id), asRecord(params).answer),
     'consent.pending': () => consent.pending(),
     'consent.revoke': params => consent.revoke(String(asRecord(params).key)),
+    'shield.lockdown.get': () => deps.mullvad.lockdownGet(),
+
+    'shield.lockdown.set': async params => {
+      const result = await deps.mullvad.lockdownSet(asRecord(params).on === true)
+
+      return { ok: result.code === 0, on: await deps.mullvad.lockdownGet() }
+    },
+
+    'shield.radar': async () => ({
+      sample: await lookAtTheMachine(),
+      shield: shield.check(),
+      summary: ledger.summary()
+    }),
+
+    'shield.report': async () => {
+      const status = await deps.mullvad.statusDetails().catch(() => null)
+      const place = status?.details
+      const exit = place?.country ? (place.city ? `${place.country}, ${place.city}` : place.country) : null
+
+      return ledger.report({
+        appVersion: deps.appVersion,
+        exit: place?.state === 'connected' ? exit : null,
+        lockdown: await deps.mullvad.lockdownGet().catch(() => null),
+        vpnRequired: shield.check().required
+      })
+    },
+
+    'shield.reset': () => {
+      ledger.reset()
+
+      return true
+    },
+
+    'shield.state': () => shield.check(),
     'teleport.destinations': () => teleport.destinations(),
     'teleport.home': () => teleport.home('user'),
     'teleport.jump': params => teleport.jump(parseJump(params, 'user')),
@@ -252,6 +359,8 @@ export function createHermoso(deps: HermosoDeps) {
 
     async dispose(): Promise<void> {
       teleport.dispose()
+      timers.forEach(timer => clearInterval(timer))
+      timers = []
 
       // The plugin must not keep an address that no longer answers.
       for (const home of published) {
@@ -271,6 +380,8 @@ export function createHermoso(deps: HermosoDeps) {
      */
     async prepare(hermesHome: string): Promise<void> {
       let address: { token: string; url: string } | null = null
+
+      startWatching()
 
       try {
         address = await bridge.start()
@@ -295,6 +406,13 @@ export function createHermoso(deps: HermosoDeps) {
 
     /** At launch, before the VPN gate connects anything: a trip left open by a crash is brought home. */
     recover: (): Promise<void> => teleport.recover(),
+
+    shield: {
+      check: () => shield.check(),
+      ledger,
+      latest: (): null | RadarSample => latestSample,
+      look: lookAtTheMachine
+    },
 
     teleport
   }

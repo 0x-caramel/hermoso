@@ -15353,6 +15353,7 @@ const vpn = createVpnController({
 
 // Hermoso: Teleport, the agent's bridge and plugin, and the call surface of the app's windows (electron/hermoso/).
 const hermoso = createHermoso({
+  appVersion: app.getVersion(),
   dataDir: app.getPath('userData'),
   dialog,
   log: rememberLog,
