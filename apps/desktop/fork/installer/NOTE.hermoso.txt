@@ -4,13 +4,35 @@ Hermoso
 Hermoso is the brother of Hermes: Hermes Desktop (Nous Research, MIT licence) with a bodyguard in
 front of it. It is an unofficial fork, not affiliated with Nous Research or with Mullvad VPN AB.
 
-  - It keeps Hermes behind a Mullvad VPN tunnel: when it starts it connects Mullvad and holds
-    Hermes back until the tunnel is up. You need Mullvad VPN installed and an account logged in
-    (https://mullvad.net).
-  - It adds protection and powers on top of that (see the project page for the list).
+What he does
+  - Shield:       when the VPN tunnel drops, the agent stands still until it is back. A radar shows
+                  where the app's connections really go.
+  - Guardian:     before the agent does something that cannot be undone (deleting folders, rewriting
+                  git history, running what it downloaded, reading keys, ...) a person decides, in
+                  plain words. Two things are never allowed: wiping a disk, editing Hermoso himself.
+  - Time Machine: the project is snapshotted before the agent changes files; one click rewinds, and
+                  what you edited yourself is kept.
+  - Ghost:        a window that keeps nothing. Its folder is deleted on the panic key
+                  (Ctrl+Alt+Shift+Backspace), on close, or at the next start.
+  - Teleport:     move the Mullvad exit country for a while; it comes back by itself.
+  - Aura:         a glow that grows with what he did for you. Just for fun.
 
-The first time it starts it installs Hermes itself (a few minutes, it needs the internet).
-It does not carry anyone's chats, keys or settings: you start from zero.
+He is a guard, not a vault: he is not a sandbox, the guardian recognises patterns and can be fooled
+by a determined program, and only Mullvad's "Always require VPN" is a real wall against a leak. What
+each protection does and does not do is written in the Hermoso page and in the project's threat model.
+
+Mullvad
+  The VPN gate, Shield and Teleport need Mullvad VPN installed and an account logged in
+  (https://mullvad.net): when it starts, Hermoso connects Mullvad and holds Hermes back until the
+  tunnel is up. Guardian, Time Machine and Ghost do not need it, and you can start without the VPN
+  for one launch ("Continue without VPN") or switch the requirement off in Settings > VPN.
+
+The first time it starts it installs Hermes itself (a few minutes, it needs the internet). The
+installer carries nobody's chats, keys or settings. If this computer already has Hermes, Hermoso
+uses the same profile: close one of them before opening the other.
+
+The installer is not signed: Windows SmartScreen says "Unknown publisher" once ("More info", then
+"Run anyway"). Compare its SHA-256 with the one in the release notes if you want to be sure.
 
 Updates are not done from inside the app: whoever gave you this sends a new installer, and installing
 it over this one keeps your data. To remove it: Settings > Apps > Hermoso. Your data stays
