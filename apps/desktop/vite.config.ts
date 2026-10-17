@@ -91,10 +91,12 @@ const emojibaseAssets = () => ({
       if (!emojibaseDir || !EMOJIBASE_PATH.test(rel)) {
         return next()
       }
+
       fs.readFile(path.join(emojibaseDir, rel), (err: unknown, buf: Buffer) => {
         if (err) {
           return next()
         }
+
         res.setHeader('Content-Type', 'application/json')
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
         res.end(buf)
@@ -116,8 +118,21 @@ const emojibaseAssets = () => ({
   }
 })
 
+// Fork: a fork that renamed itself (fork/identity.json, selected by HERMES_FORK_IDENTITY) writes its own name
+// across an empty chat; without the variable (tests, upstream builds) the wordmark stays "HERMES AGENT".
+const forkWordmark: null | string = (() => {
+  try {
+    const file = process.env.HERMES_FORK_IDENTITY
+
+    return file ? (JSON.parse(fs.readFileSync(file, 'utf8')).wordmark ?? null) : null
+  } catch {
+    return null
+  }
+})()
+
 export default defineConfig(({ command }) => ({
   base: './',
+  define: { __FORK_WORDMARK__: JSON.stringify(forkWordmark) },
   plugins: [react(), babel({ presets: [compilerPreset()] }), tailwindcss(), emojibaseAssets()],
   css: {
     // Pin an explicit (empty) PostCSS config. Tailwind is handled entirely by

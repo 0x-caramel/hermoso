@@ -1,0 +1,21 @@
+{
+  "_": "Who this fork is. Read by fork/pack.mjs, fork/sync.mjs, fork/installer/*, fork/install-shortcut.ps1 (through fork/identity.cjs) and, at build time, by product-identity.cjs and vite.config.ts (through the HERMES_FORK_IDENTITY variable the scripts set). Names only: the userData folder and the single-instance lock stay Hermes' own on purpose, so Hermoso, Hermes (Mullvad) and the official Hermes never run two backends on one profile.",
+  "id": "hermoso",
+  "branch": "hermoso",
+  "base": "hermoso-base",
+  "displayName": "Hermoso",
+  "executable": "Hermoso",
+  "appId": "com.hermoso.desktop",
+  "shortcutName": "Hermoso",
+  "wordmark": "HERMOSO",
+  "installer": {
+    "packageName": "hermoso",
+    "artifact": "Hermoso-Setup",
+    "publisher": "Hermoso, an unofficial fork of Hermes"
+  },
+  "brand": {
+    "script": "brand/hermoso.py",
+    "label": "the Hermoso art",
+    "commit": "draw the Hermoso art on the official tiles"
+  }
+}

@@ -100,10 +100,16 @@ const officialChannel =
     key => request.identity[key] === identity[key]
   )
 
-module.exports = !request
-  ? identity
-  : Object.freeze(
-      officialChannel
-        ? { ...identity, channel: request.channel }
-        : { ...request.identity, store: false, light: false, channel: request.channel }
-    )
+// Fork: a fork that renamed itself (fork/identity.json, selected by HERMES_FORK_IDENTITY) carries its own
+// product name, executable and app id; a no-op without the variable (see fork/identity-override.cjs).
+const applyForkIdentity = require('./fork/identity-override.cjs')
+
+module.exports = applyForkIdentity(
+  !request
+    ? identity
+    : Object.freeze(
+        officialChannel
+          ? { ...identity, channel: request.channel }
+          : { ...request.identity, store: false, light: false, channel: request.channel }
+      )
+)

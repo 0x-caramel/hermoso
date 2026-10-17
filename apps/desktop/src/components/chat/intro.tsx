@@ -146,7 +146,11 @@ function pickCopy(copies: IntroCopy[], seed = 0): IntroCopy {
   return copies[Math.abs(seed) % copies.length] || FALLBACK_COPY[0]
 }
 
-const WORDMARK = 'HERMES AGENT'
+// Fork: set by vite.config.ts from fork/identity.json when a fork renamed itself (Hermoso); upstream builds
+// and tests leave it undefined.
+declare const __FORK_WORDMARK__: null | string | undefined
+
+const WORDMARK = (typeof __FORK_WORDMARK__ === 'string' && __FORK_WORDMARK__) || 'HERMES AGENT'
 
 function resolveCopy(personality?: string, seed?: number): IntroCopy {
   const personalityKey = normalizeKey(personality)

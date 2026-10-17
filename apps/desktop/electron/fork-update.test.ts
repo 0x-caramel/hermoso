@@ -314,6 +314,7 @@ describe('createForkUpdate (the shell)', () => {
       app: { exit, getLocale: () => 'it-IT', relaunch },
       BrowserWindow: FakeWindow as never,
       dialog: { showMessageBox },
+      displayName: 'Hermes (Mullvad)',
       env: {
         HERMES_FORK_REPO: repoDir,
         LOCALAPPDATA: path.join(userData, 'no-such-localappdata')
@@ -519,6 +520,25 @@ describe('createForkUpdate (the shell)', () => {
     writeFileSync(statePath(), JSON.stringify({ at: 1, head: HEAD, status: 'done' }))
     shell().announceLastResult()
     expect(showMessageBox).not.toHaveBeenCalled()
+  })
+
+  it('speaks in the name of the fork: the window, the helper console and the notices', () => {
+    writeFileSync(
+      statePath(),
+      JSON.stringify({ at: 1, conflicts: ['apps/desktop/electron/main.ts'], head: HEAD, status: 'failed' })
+    )
+
+    const fork = shell({ displayName: 'Hermoso' })
+
+    fork.announceLastResult()
+    expect(showMessageBox.mock.calls[0][0].detail).toContain('Hermoso')
+    expect(showMessageBox.mock.calls[0][0].detail).not.toContain('Mullvad')
+
+    writeFileSync(statePath(), JSON.stringify({ at: 1, head: 'c'.repeat(40), status: 'done' }))
+    expect(shell({ displayName: 'Hermoso' }).takeOverIfStale()).toBe(true)
+    expect(decodeURIComponent(windows[0].loadURL.mock.calls[0][0])).toContain('Aggiorno Hermoso')
+    expect(spawned[0].args).toEqual(expect.arrayContaining(['--name', 'Hermoso']))
+    expect(spawned[1].args).toContain('Hermoso - aggiornamento')
   })
 
   describe('who updates this build (updateMechanism)', () => {

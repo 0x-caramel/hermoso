@@ -1,0 +1,17 @@
+Hermoso
+=======
+
+Hermoso is the brother of Hermes: Hermes Desktop (Nous Research, MIT licence) with a bodyguard in
+front of it. It is an unofficial fork, not affiliated with Nous Research or with Mullvad VPN AB.
+
+  - It keeps Hermes behind a Mullvad VPN tunnel: when it starts it connects Mullvad and holds
+    Hermes back until the tunnel is up. You need Mullvad VPN installed and an account logged in
+    (https://mullvad.net).
+  - It adds protection and powers on top of that (see the project page for the list).
+
+The first time it starts it installs Hermes itself (a few minutes, it needs the internet).
+It does not carry anyone's chats, keys or settings: you start from zero.
+
+Updates are not done from inside the app: whoever gave you this sends a new installer, and installing
+it over this one keeps your data. To remove it: Settings > Apps > Hermoso. Your data stays
+(%LOCALAPPDATA%\hermes); delete that folder by hand if you want it gone too.

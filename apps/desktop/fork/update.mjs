@@ -13,7 +13,7 @@
  *
  *   node fork/update.mjs --pid <app pid> --exe <Hermes.exe> --repo <fork checkout> --runtime <official checkout>
  *        --target <runtime commit> --state <fork-update.json> --marker <.hermes-update-in-progress>
- *        [--log <fork-update.log>] [--vpn required|off] [--lang it|en] [--sync <script>] [--no-relaunch]
+ *        [--log <fork-update.log>] [--vpn required|off] [--lang it|en] [--name <what the fork is called>] [--sync <script>] [--no-relaunch]
  */
 
 import { spawn, spawnSync } from 'node:child_process'
@@ -24,42 +24,43 @@ export const PID_WAIT_MS = 120_000
 export const MARKER_WAIT_MS = 300_000
 export const VPN_WAIT_MS = 90_000
 export const HEARTBEAT_MS = 15_000
+const DEFAULT_NAME = 'Hermes (Mullvad)'
 
-const WORDS = {
+const wordsFor = name => ({
   en: {
-    closed: 'Hermes (Mullvad) is closed.',
+    closed: `${name} is closed.`,
     conflictReason: n => `The fork does not apply cleanly on the new official code: ${n} file(s) conflict:`,
-    done: 'Done. Reopening Hermes (Mullvad).',
+    done: `Done. Reopening ${name}.`,
     failed: reason => `The update did not go through: ${reason}`,
-    noClose: 'Hermes (Mullvad) did not close in time',
+    noClose: `${name} did not close in time`,
     noMarker: 'the official update is still running',
-    reopening: 'Reopening Hermes (Mullvad) as it was. Ask Claude to "align the fork".',
+    reopening: `Reopening ${name} as it was. Ask Claude to "align the fork".`,
     syncing: 'Updating the fork on the new official code (about 8 minutes).',
-    vpnDeferred: 'The VPN is not connected: the update waits for the next launch. Reopening Hermes (Mullvad) as it was.',
+    vpnDeferred: `The VPN is not connected: the update waits for the next launch. Reopening ${name} as it was.`,
     vpnWait: 'Waiting for the Mullvad tunnel...',
-    waitApp: 'Waiting for Hermes (Mullvad) to close...',
+    waitApp: `Waiting for ${name} to close...`,
     waitOfficial: 'Waiting for the official update to finish...'
   },
   it: {
-    closed: 'Hermes (Mullvad) è chiuso.',
+    closed: `${name} è chiuso.`,
     conflictReason: n => `Il fork non si applica pulito sul codice ufficiale nuovo: ${n} file in conflitto:`,
-    done: 'Fatto. Riapro Hermes (Mullvad).',
+    done: `Fatto. Riapro ${name}.`,
     failed: reason => `L'aggiornamento non è riuscito: ${reason}`,
-    noClose: 'Hermes (Mullvad) non si è chiuso in tempo',
+    noClose: `${name} non si è chiuso in tempo`,
     noMarker: "l'aggiornamento ufficiale è ancora in corso",
-    reopening: 'Riapro Hermes (Mullvad) com\'era. Scrivi a Claude: "allinea il fork".',
+    reopening: `Riapro ${name} com\'era. Scrivi a Claude: "allinea il fork".`,
     syncing: 'Aggiorno il fork sul codice ufficiale nuovo (circa 8 minuti).',
-    vpnDeferred: 'La VPN non è connessa: l\'aggiornamento aspetta il prossimo avvio. Riapro Hermes (Mullvad) com\'era.',
+    vpnDeferred: `La VPN non è connessa: l\'aggiornamento aspetta il prossimo avvio. Riapro ${name} com\'era.`,
     vpnWait: 'Aspetto il tunnel Mullvad...',
-    waitApp: 'Aspetto che Hermes (Mullvad) si chiuda...',
+    waitApp: `Aspetto che ${name} si chiuda...`,
     waitOfficial: "Aspetto che l'aggiornamento ufficiale finisca..."
   }
-}
+})
 
 // ── parsing ─────────────────────────────────────────────────────────────────────────────
 
 export function parseArgs(argv) {
-  const options = { lang: 'it', noRelaunch: false, vpn: 'off' }
+  const options = { lang: 'it', name: DEFAULT_NAME, noRelaunch: false, vpn: 'off' }
   const value = i => argv[i + 1]
 
   for (let i = 0; i < argv.length; i++) {
@@ -76,6 +77,7 @@ export function parseArgs(argv) {
       case '--log':
       case '--marker':
       case '--sync':
+      case '--name':
       case '--lang':
       case '--vpn':
         options[argv[i].slice(2)] = value(i)
@@ -135,7 +137,8 @@ export function parseSyncOutput(lines) {
  *   now, sleep, every, pidAlive, markerLive, mullvadStatus, runSync, relaunch, writeState, print
  */
 export async function runUpdate(options, edges) {
-  const t = WORDS[options.lang] ?? WORDS.it
+  const words = wordsFor(options.name ?? DEFAULT_NAME)
+  const t = words[options.lang] ?? words.it
   const say = line => edges.print(line)
   let lastBeat = -Infinity
 

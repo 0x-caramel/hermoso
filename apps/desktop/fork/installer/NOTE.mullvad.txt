@@ -1,0 +1,15 @@
+Hermes (Mullvad)
+================
+
+Hermes Desktop (Nous Research, MIT licence) with two additions, in a build that is NOT official:
+
+  - Mullvad VPN: when it starts, the app connects Mullvad and keeps Hermes waiting until the
+    tunnel is up. You need Mullvad VPN installed and an account logged in (https://mullvad.net).
+  - a magenta logo.
+
+The first time it starts it installs Hermes itself (a few minutes, it needs the internet).
+It does not carry anyone's chats, keys or settings: you start from zero.
+
+Updates are not done from inside the app: whoever gave you this sends a new installer, and installing
+it over this one keeps your data. To remove it: Settings > Apps > Hermes (Mullvad). Your data stays
+(%LOCALAPPDATA%\hermes); delete that folder by hand if you want it gone too.

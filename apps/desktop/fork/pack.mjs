@@ -21,20 +21,26 @@ import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { identityEnv, readIdentity } from './identity.mjs'
+
 const DESKTOP = path.resolve(import.meta.dirname, '..')
 const IS_WINDOWS = process.platform === 'win32'
 
+// Who this fork is (fork/identity.json; the Mullvad fork has none and keeps its defaults).
+const IDENTITY = readIdentity(DESKTOP)
+
 /** The environment that makes write-build-stamp.mjs pin `sha` (an official commit). */
 export function stampEnv(sha, branch = 'main') {
-  return { GITHUB_REF_NAME: branch, GITHUB_SHA: sha }
+  // HERMES_FORK_IDENTITY: the fork's names reach product-identity.cjs and vite.config.ts (see identity-override.cjs)
+  return { GITHUB_REF_NAME: branch, GITHUB_SHA: sha, ...identityEnv(DESKTOP) }
 }
 
-/** The official commit the fork sits on: what branch `main` records. */
+/** The official commit the fork sits on: what its base branch (`main`, or `hermoso-base`) records. */
 export function officialBase(cwd = DESKTOP) {
-  const r = spawnSync('git', ['rev-parse', 'main'], { cwd, encoding: 'utf8', windowsHide: true })
+  const r = spawnSync('git', ['rev-parse', IDENTITY.base], { cwd, encoding: 'utf8', windowsHide: true })
 
   if (r.status !== 0) {
-    throw new Error(`cannot resolve branch "main" (the official base commit): ${(r.stderr || '').trim()}`)
+    throw new Error(`cannot resolve branch "${IDENTITY.base}" (the official base commit): ${(r.stderr || '').trim()}`)
   }
 
   return r.stdout.trim()
@@ -85,7 +91,7 @@ function main(argv) {
     run('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join('fork', 'install-shortcut.ps1')])
   }
 
-  console.log('[fork-pack] done: release/win-unpacked/Hermes.exe (Start Menu: "Hermes (Mullvad)")')
+  console.log(`[fork-pack] done: release/win-unpacked/${IDENTITY.executable}.exe (Start Menu: "${IDENTITY.shortcutName}")`)
 }
 
 if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(import.meta.filename)) {

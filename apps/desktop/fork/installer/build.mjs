@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * fork/installer/build.mjs — the installer you give to someone: Hermes-Mullvad-Setup-<version>.exe.
+ * fork/installer/build.mjs — the installer you give to someone: <artifact>-<version>.exe
+ * (Hermes-Mullvad-Setup / Hermoso-Setup, from fork/identity.json).
  *
  *   node fork/installer/build.mjs                  wrap release/win-unpacked (built by fork/pack.mjs) in a setup
  *   node fork/installer/build.mjs --version 2026.10.1   name the build yourself (default: today, YYYY.M.D)
@@ -10,8 +11,7 @@
  * person installs is what was tested here. Run fork/pack.mjs first after every change or alignment.
  *
  * What the person gets (see FORK.md, "Giving it to someone"): a per-user install (no administrator
- * prompt) with a Start Menu and Desktop shortcut "Hermes (Mullvad)" carrying the magenta icon and the
- * fork's own AppUserModelID, and an entry in Apps & features to remove it. Their data is never part
+ * prompt) with a Start Menu and Desktop shortcut carrying the fork's icon and its own AppUserModelID, and an entry in Apps & features to remove it. Their data is never part
  * of it and never removed by it. The app they get has no "Update now" (electron/fork-update.ts,
  * `updateMechanism`): they get a new installer from you after each alignment, and installing it over
  * the old one keeps everything.
@@ -25,27 +25,17 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 
+import { readIdentity } from '../identity.mjs'
+
 const DESKTOP = path.resolve(import.meta.dirname, '..', '..')
 const REPO = path.resolve(DESKTOP, '..', '..')
 const UNPACKED = path.join(DESKTOP, 'release', 'win-unpacked')
 const CONFIG = path.join(import.meta.dirname, 'electron-builder.nsis.cjs')
 
-const NOTE = `Hermes (Mullvad)
-================
+const IDENTITY = readIdentity(DESKTOP)
 
-Hermes Desktop (Nous Research, MIT licence) with two additions, in a build that is NOT official:
-
-  - Mullvad VPN: when it starts, the app connects Mullvad and keeps Hermes waiting until the
-    tunnel is up. You need Mullvad VPN installed and an account logged in (https://mullvad.net).
-  - a magenta logo.
-
-The first time it starts it installs Hermes itself (a few minutes, it needs the internet).
-It does not carry anyone's chats, keys or settings: you start from zero.
-
-Updates are not done from inside the app: whoever gave you this sends a new installer, and installing
-it over this one keeps your data. To remove it: Settings > Apps > Hermes (Mullvad). Your data stays
-(%LOCALAPPDATA%\\hermes); delete that folder by hand if you want it gone too.
-`
+// The note that goes beside the app: NOTE.<id>.txt (what this fork is, what it needs, how updates work).
+const NOTE = fs.readFileSync(path.join(import.meta.dirname, `NOTE.${IDENTITY.id}.txt`), 'utf8').replace(/\r?\n/g, '\n')
 
 function fail(message) {
   console.error(`[fork-installer] ${message}`)
@@ -95,13 +85,13 @@ function main() {
     fail(error.message)
   }
 
-  if (!fs.existsSync(path.join(UNPACKED, 'Hermes.exe'))) {
-    fail(`${UNPACKED} has no Hermes.exe: run "node fork/pack.mjs" first`)
+  if (!fs.existsSync(path.join(UNPACKED, `${IDENTITY.executable}.exe`))) {
+    fail(`${UNPACKED} has no ${IDENTITY.executable}.exe: run "node fork/pack.mjs" first`)
   }
 
   // The app must be the one the fork's current official base asks for.
   const stamp = JSON.parse(fs.readFileSync(path.join(UNPACKED, 'resources', 'install-stamp.json'), 'utf8').replace(/^﻿/, ''))
-  const base = git(['rev-parse', 'main'])
+  const base = git(['rev-parse', IDENTITY.base])
 
   if (base && stamp.commit !== base) {
     fail(`the built app is stamped ${String(stamp.commit).slice(0, 8)}, the fork sits on ${base.slice(0, 8)}: run "node fork/pack.mjs"`)
@@ -142,7 +132,7 @@ function main() {
     [path.join(builderRoot, bin), '--win', 'nsis', '--x64', '--prepackaged', app, '--config', CONFIG, '--publish', 'never'],
     {
       cwd: DESKTOP,
-      env: { ...process.env, HERMES_MULLVAD_INSTALLER_OUT: options.out, HERMES_MULLVAD_INSTALLER_VERSION: options.version },
+      env: { ...process.env, HERMES_FORK_INSTALLER_OUT: options.out, HERMES_FORK_INSTALLER_VERSION: options.version },
       stdio: 'inherit',
       windowsHide: true
     }
@@ -154,7 +144,7 @@ function main() {
     fail(`electron-builder failed (exit ${built.status})`)
   }
 
-  const setup = path.join(options.out, `Hermes-Mullvad-Setup-${options.version}.exe`)
+  const setup = path.join(options.out, `${IDENTITY.installer.artifact}-${options.version}.exe`)
 
   if (!fs.existsSync(setup)) {
     fail(`electron-builder finished but ${setup} is not there`)

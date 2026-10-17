@@ -1241,7 +1241,15 @@ const BOOT_FAKE_STEP_MS = (() => {
   return Math.max(120, raw)
 })()
 
-const APP_NAME: string = IDENTITY_APP_NAME || process.env.HERMES_DESKTOP_APP_NAME || 'Hermes'
+// Fork: a fork that renamed itself (fork/identity.json, baked into PRODUCT_IDENTITY) is called by its own
+// name; for stock identities displayName is "Hermes", exactly the old literal.
+const APP_NAME: string = IDENTITY_APP_NAME || process.env.HERMES_DESKTOP_APP_NAME || PRODUCT_IDENTITY.displayName
+
+// What the fork calls itself in its own notices: its identity's name, or "Hermes (Mullvad)" for the Mullvad
+// fork, whose identity is upstream's.
+const FORK_NAME: string =
+  PRODUCT_IDENTITY.appId === 'com.nousresearch.hermes' ? 'Hermes (Mullvad)' : PRODUCT_IDENTITY.displayName
+
 const HUD_WINDOW_TITLE = `${APP_NAME} HUD`
 const TITLEBAR_HEIGHT = 34
 const MACOS_TRAFFIC_LIGHTS_HEIGHT = 14
@@ -1658,7 +1666,12 @@ Menu.setApplicationMenu(null)
 // the official Hermes' taskbar button and draw THAT shortcut's icon. The Start Menu
 // shortcut written by fork/install-shortcut.ps1 carries the same id.
 if (IS_WINDOWS) {
-  app.setAppUserModelId(IDENTITY_APP_NAME ? PRODUCT_IDENTITY.appId : 'com.nousresearch.hermes.mullvad')
+  // A fork that renamed itself (Hermoso) carries its own app id in the baked identity; the Mullvad fork,
+  // which keeps upstream's id in the identity, has this one.
+  const FORK_AUMID =
+    PRODUCT_IDENTITY.appId === 'com.nousresearch.hermes' ? 'com.nousresearch.hermes.mullvad' : PRODUCT_IDENTITY.appId
+
+  app.setAppUserModelId(IDENTITY_APP_NAME ? PRODUCT_IDENTITY.appId : FORK_AUMID)
 }
 
 // Seed the native About panel with the best-known Hermes version. This is
@@ -15353,6 +15366,7 @@ const forkUpdate = createForkUpdate({
   app,
   BrowserWindow,
   dialog,
+  displayName: FORK_NAME,
   env: process.env,
   execPath: process.execPath,
   gitBinary: resolveGitBinary,

@@ -200,52 +200,51 @@ export function decideForkUpdate(facts: ForkUpdateFacts): ForkUpdateDecision {
 
 type Language = 'en' | 'it'
 
-const WORDS = {
-  en: {
-    busyBody: (since: string) =>
-      `Hermes (Mullvad) is being updated (started at ${since}). Open it again in a few minutes; it reopens by itself when it is done.`,
-    busyTitle: 'Updating',
-    conflictReason: (count: number) =>
-      `The fork does not apply cleanly on the new official code: ${count} file(s) conflict:`,
-    consoleTitle: 'Hermes (Mullvad) - update',
-    deferredBody:
-      'The VPN was not connected, so the update waits for the next launch. Hermes (Mullvad) keeps working as it was.',
-    deferredTitle: 'Fork update postponed',
-    failedBody: (reason: string) =>
-      `Hermes (Mullvad) could not be updated to the new official version, and keeps working as it was.\n\n${reason}\n\nAsk Claude to "align the fork".`,
-    failedTitle: 'Fork update did not go through',
-    windowBody:
-      'Hermes was updated. The fork is being rebuilt on the new code: about 8 minutes, then it reopens by itself.',
-    windowHint: 'Progress is in the black window that opens next to this one.',
-    windowTitle: 'Updating Hermes (Mullvad)'
-  },
-  it: {
-    busyBody: (since: string) =>
-      `Hermes (Mullvad) si sta aggiornando (iniziato alle ${since}). Riaprilo tra qualche minuto: si riapre da solo a fine aggiornamento.`,
-    busyTitle: 'Aggiornamento in corso',
-    conflictReason: (count: number) =>
-      `Il fork non si applica pulito sul codice ufficiale nuovo: ${count} file in conflitto:`,
-    consoleTitle: 'Hermes (Mullvad) - aggiornamento',
-    deferredBody:
-      'La VPN non era connessa, quindi l’aggiornamento aspetta il prossimo avvio. Hermes (Mullvad) funziona come prima.',
-    deferredTitle: 'Aggiornamento del fork rimandato',
-    failedBody: (reason: string) =>
-      `Non sono riuscito ad aggiornare Hermes (Mullvad) alla nuova versione ufficiale: continua a funzionare come prima.\n\n${reason}\n\nScrivi a Claude: "allinea il fork".`,
-    failedTitle: 'Aggiornamento del fork non riuscito',
-    windowBody:
-      'Hermes è stato aggiornato. Sto ricompilando il fork sul codice nuovo: ci vogliono circa 8 minuti, poi si riapre da solo.',
-    windowHint: 'L’avanzamento è nella finestra nera che si apre accanto a questa.',
-    windowTitle: 'Aggiorno Hermes (Mullvad)'
-  }
-} as const
+const wordsFor = (name: string) =>
+  ({
+    en: {
+      busyBody: (since: string) =>
+        `${name} is being updated (started at ${since}). Open it again in a few minutes; it reopens by itself when it is done.`,
+      busyTitle: 'Updating',
+      conflictReason: (count: number) =>
+        `The fork does not apply cleanly on the new official code: ${count} file(s) conflict:`,
+      consoleTitle: `${name} - update`,
+      deferredBody: `The VPN was not connected, so the update waits for the next launch. ${name} keeps working as it was.`,
+      deferredTitle: 'Fork update postponed',
+      failedBody: (reason: string) =>
+        `${name} could not be updated to the new official version, and keeps working as it was.\n\n${reason}\n\nAsk Claude to "align the fork".`,
+      failedTitle: 'Fork update did not go through',
+      windowBody:
+        'Hermes was updated. The fork is being rebuilt on the new code: about 8 minutes, then it reopens by itself.',
+      windowHint: 'Progress is in the black window that opens next to this one.',
+      windowTitle: `Updating ${name}`
+    },
+    it: {
+      busyBody: (since: string) =>
+        `${name} si sta aggiornando (iniziato alle ${since}). Riaprilo tra qualche minuto: si riapre da solo a fine aggiornamento.`,
+      busyTitle: 'Aggiornamento in corso',
+      conflictReason: (count: number) =>
+        `Il fork non si applica pulito sul codice ufficiale nuovo: ${count} file in conflitto:`,
+      consoleTitle: `${name} - aggiornamento`,
+      deferredBody: `La VPN non era connessa, quindi l’aggiornamento aspetta il prossimo avvio. ${name} funziona come prima.`,
+      deferredTitle: 'Aggiornamento del fork rimandato',
+      failedBody: (reason: string) =>
+        `Non sono riuscito ad aggiornare ${name} alla nuova versione ufficiale: continua a funzionare come prima.\n\n${reason}\n\nScrivi a Claude: "allinea il fork".`,
+      failedTitle: 'Aggiornamento del fork non riuscito',
+      windowBody:
+        'Hermes è stato aggiornato. Sto ricompilando il fork sul codice nuovo: ci vogliono circa 8 minuti, poi si riapre da solo.',
+      windowHint: 'L’avanzamento è nella finestra nera che si apre accanto a questa.',
+      windowTitle: `Aggiorno ${name}`
+    }
+  }) as const
 
 export const languageFor = (locale: string): Language => (/^it\b/i.test(locale) ? 'it' : 'en')
 
 const escapeHtml = (text: string) =>
   text.replace(/[&<>"]/g, c => ({ '"': '&quot;', '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] as string)
 
-export function updatingWindowHtml(language: Language): string {
-  const t = WORDS[language]
+export function updatingWindowHtml(language: Language, name = 'Hermes (Mullvad)'): string {
+  const t = wordsFor(name)[language]
 
   return `<!doctype html><html lang="${language}"><meta charset="utf-8"><title>${escapeHtml(t.windowTitle)}</title>
 <style>
@@ -312,6 +311,8 @@ export interface ForkUpdateShell {
     loadURL: (url: string) => Promise<void>
   }
   dialog: { showMessageBox: (options: Electron.MessageBoxOptions) => Promise<unknown> }
+  /** What the fork is called in its own windows and notices ("Hermes (Mullvad)", "Hermoso"). */
+  displayName: string
   env: NodeJS.ProcessEnv
   execPath: string
   /** Runs git in a directory. Defaults to the real binary (`gitBinary`); injectable for tests. */
@@ -413,6 +414,8 @@ export function createForkUpdate(shell: ForkUpdateShell) {
       shell.vpnRequired() ? 'required' : 'off',
       '--lang',
       languageFor(shell.app.getLocale()),
+      '--name',
+      shell.displayName,
       ...(shell.env.HERMES_FORK_UPDATE_SYNC ? ['--sync', shell.env.HERMES_FORK_UPDATE_SYNC] : []),
       ...(isOff(shell.env.HERMES_FORK_UPDATE_RELAUNCH) ? ['--no-relaunch'] : [])
     ]
@@ -464,7 +467,7 @@ export function createForkUpdate(shell: ForkUpdateShell) {
         '/s',
         '/c',
         'start',
-        WORDS[language].consoleTitle,
+        wordsFor(shell.displayName)[language].consoleTitle,
         node,
         path.join(decision.repoRoot, VIEWER),
         '--log',
@@ -527,7 +530,7 @@ export function createForkUpdate(shell: ForkUpdateShell) {
 
       record({ ...state, announced: true })
 
-      const t = WORDS[languageFor(shell.app.getLocale())]
+      const t = wordsFor(shell.displayName)[languageFor(shell.app.getLocale())]
       const failed = state.status === 'failed'
       const conflicts = state.conflicts ?? []
 
@@ -574,7 +577,7 @@ export function createForkUpdate(shell: ForkUpdateShell) {
       }
 
       if (decision.action === 'busy') {
-        const t = WORDS[languageFor(shell.app.getLocale())]
+        const t = wordsFor(shell.displayName)[languageFor(shell.app.getLocale())]
 
         log(`an update to ${decision.head.slice(0, 8)} is already running; not booting the old build under it`)
         void shell.dialog
@@ -614,13 +617,15 @@ export function createForkUpdate(shell: ForkUpdateShell) {
           maximizable: false,
           resizable: false,
           show: true,
-          title: WORDS[language].windowTitle,
+          title: wordsFor(shell.displayName)[language].windowTitle,
           webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
           width: 560
         })
 
         void window
-          .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(updatingWindowHtml(language))}`)
+          .loadURL(
+            `data:text/html;charset=utf-8,${encodeURIComponent(updatingWindowHtml(language, shell.displayName))}`
+          )
           .catch(() => undefined)
 
         spawnHelper(decision, runtimeRoot)

@@ -1,17 +1,18 @@
-# Hermes (Mullvad) — this fork
+# Hermoso — this fork
 
-The official Hermes Desktop, plus three things. Everything that is not upstream's lives in
-`apps/desktop/fork/` or in a short list of hooks (see `hooks.json`).
+Hermoso is the brother of Hermes: the official Hermes Desktop with a bodyguard in front of it.
+Everything that is not upstream's lives in `apps/desktop/fork/` or in a short list of hooks (see
+`hooks.json`).
 
 | | What | Where |
 | --- | --- | --- |
 | **VPN gate** | Connects Mullvad on launch and holds the backend start until the tunnel is up; an egress gate holds every external request of the app until then; boot card, Settings → VPN, statusbar chip | `electron/mullvad.ts`, `vpn-controller.ts`, `egress-gate.ts`, `src/store/vpn.ts`, `src/components/vpn-gate-overlay.tsx`, `src/app/settings/vpn-settings.tsx`; invariants in `AGENTS.md` |
-| **Own identity** | Its own AppUserModelID (`com.nousresearch.hermes.mullvad`), so Windows gives it its own taskbar button and icon instead of folding it into the official Hermes | `electron/main.ts` (one line), `fork/install-shortcut.ps1` |
-| **Logo #E100FF** | The black of the official logo art becomes `#E100FF`; white and transparency are kept. The official install is untouched | `fork/brand/recolor.py` (+ the generated images, in the `brand:` commit) |
+| **Own identity** | Its own name (Hermoso), executable (`Hermoso.exe`), AppUserModelID (`com.hermoso.desktop`) and wordmark, so Windows gives it its own taskbar button and icon instead of folding it into the official Hermes | `fork/identity.json` (read by every script through `fork/identity.cjs`), `fork/identity-override.cjs`, `electron/main.ts` (a few lines), `vite.config.ts`, `fork/install-shortcut.ps1` |
+| **Logo** | The brother's portrait, on the very tiles of the official logo: black ink on a white tile (light) and on a black tile with a white halo (dark), at the size and position of every official image. The official install is untouched | `fork/brand/hermoso.py`, `fork/brand/hermoso/source.png` (+ the generated images, in the `brand:` commit) |
 
-Start it from the Start Menu: **Hermes (Mullvad)**. The official **Hermes** shortcut keeps
-starting the untouched official app. Both share the same profile and single-instance lock, so
-close one before opening the other.
+Start it from the Start Menu: **Hermoso**. The official **Hermes** shortcut keeps starting the
+untouched official app. Both share the same profile and single-instance lock, so close one before
+opening the other.
 
 Rebuild after changing code: `node apps/desktop/fork/pack.mjs` (not plain `npm run pack`). It
 stamps the bundle with the *official* commit the fork sits on instead of the fork's own commit:
@@ -19,10 +20,26 @@ the app's bundle-skew banner (desktop older than the backend after an official u
 first-launch bootstrap both read that stamp, and an unknown commit would silence the banner for
 good. The banner is the fork's reminder to run `sync.mjs`.
 
+## Two forks, one set of tools
+
+The repository also holds the **Hermes (Mullvad)** fork (violet logo, branch `mullvad-vpn`, base
+`main`). Hermoso started from the same stack and has its own branches, `hermoso` on top of
+`hermoso-base`; each fork lives in its own working tree and syncs on its own. What makes a fork
+itself is one file, `fork/identity.json` (branch, base branch, name, executable, app id, wordmark,
+installer names, the script that draws its art). Without that file the tools fall back to the
+Mullvad fork's values (`fork/identity.cjs`, `DEFAULT`), so the older fork keeps working unchanged.
+The scripts pass the file to the build through `HERMES_FORK_IDENTITY`; `product-identity.cjs` and
+`vite.config.ts` read it from there. Left unset (tests, `npm run dev`, a plain `npm run pack`), the
+build carries upstream's names.
+
+The user-data folder and the single-instance lock stay upstream's (`appNamePascal` is untouched on
+purpose): Hermoso, Hermes (Mullvad) and the official Hermes share one profile, and never run two
+backends on it.
+
 ## When the official Hermes updates
 
-The fork is a short stack of commits on one official commit: branch `main` records that
-commit, `mullvad-vpn` is `main` plus the fork. An update means: take the new official code,
+The fork is a short stack of commits on one official commit: branch `hermoso-base` records that
+commit, `hermoso` is `hermoso-base` plus the fork. An update means: take the new official code,
 put the fork's commits back on top, check nothing got lost, rebuild. That is `fork/sync.mjs`.
 
 ```
@@ -39,13 +56,13 @@ node apps/desktop/fork/sync.mjs               adopt it: same, then rebuild, refr
 
 ### Updating from inside the fork (automatic)
 
-**Update now** works from Hermes (Mullvad) itself. The official updater updates the runtime (and
+**Update now** works from Hermoso itself. The official updater updates the runtime (and
 the official Hermes) and relaunches the fork's *old* bundle. At startup, before it boots anything,
 that bundle compares the official commit it was stamped with (see `pack.mjs`) with the runtime's
 HEAD, with the same proof the app's own "bundle out of date" check uses (desktop paths changed
 after the stamp). When the runtime is provably ahead it hands over (`electron/fork-update.ts`):
 
-1. it shows a small "Updating Hermes (Mullvad)" window (the official hand-off script waits for a
+1. it shows a small "Updating Hermoso" window (the official hand-off script waits for a
    window to appear after the relaunch; an app that exits at once would be relaunched again),
    starts the Mullvad tunnel, starts `fork/update.mjs` **hidden**, and opens a black progress window
    (`fork/tail.mjs`) that only shows `fork-update.log` as it grows. The update must not depend on a
@@ -79,7 +96,7 @@ updates, and the less likely they touch the fork's hooks.
 
 - It never changes the fork unless everything passed. A conflict, a lost hook, a failing
   typecheck, unit test or e2e rolls the branch, the working tree and the previous build back
-  (`release/win-unpacked.bak`). Adopting keeps the old tip as `backup/mullvad-vpn-<time>`.
+  (`release/win-unpacked.bak`). Adopting keeps the old tip as `backup/hermoso-<time>`.
 - `hooks.json` lists where the fork hooks into upstream files (for instance the two
   `await vpn.assertReady()` calls). A merge can be clean and still lose a hook because upstream
   moved the code around it; the script fails on that. The e2e (`e2e/vpn-gate.spec.ts`) proves the
@@ -112,12 +129,12 @@ upstream re-homed. What moved that time, as a map for the next port:
 
 ```
 node apps/desktop/fork/pack.mjs                  the app, as always (after every change or alignment)
-node apps/desktop/fork/installer/build.mjs       -> apps/desktop/release/installer/Hermes-Mullvad-Setup-<YYYY.M.D>.exe  (~105 MB)
+node apps/desktop/fork/installer/build.mjs       -> apps/desktop/release/installer/Hermoso-Setup-<YYYY.M.D>.exe  (~105 MB)
 ```
 
 The setup only wraps the tree `pack.mjs` built (it rebuilds nothing), so the other person gets the
-bytes that were tested here. Per-user install (`%LOCALAPPDATA%\Programs\hermes-mullvad`, no
-administrator prompt), Start Menu and Desktop shortcuts "Hermes (Mullvad)" with the magenta icon and
+bytes that were tested here. Per-user install (`%LOCALAPPDATA%\Programs\hermoso`, no
+administrator prompt), Start Menu and Desktop shortcuts "Hermoso" with the brother's icon and
 the fork's own AppUserModelID, an entry in Apps & features. The licence of Hermes (MIT) and a short
 note are installed beside the app. It is **not signed** (that needs a publisher certificate): the
 first run shows Windows SmartScreen's "unknown publisher", "More info", "Run anyway". Send it with a
@@ -141,26 +158,29 @@ owner outside this app", there is no "Update now" to break it. After each alignm
 commands above and send the new setup; installing it over the old one keeps their data (Hermes keeps
 it in `%LOCALAPPDATA%\hermes`, outside the app). Their runtime is the one the first start installed;
 if a newer setup warns that the backend is older than the app, they run `hermes update` once in
-PowerShell. To remove it: Settings > Apps > Hermes (Mullvad); the data stays.
+PowerShell. To remove it: Settings > Apps > Hermoso; the data stays.
 
-Tested for real (2026-10-01): silent install, shortcuts and AppUserModelID, the app booting and
-answering `external`, the uninstaller leaving nothing but the data. An official Hermes on the same
-machine is not touched; the two share the profile and the single-instance lock, so close one before
-opening the other.
+An official Hermes on the same machine is not touched; the two share the profile and the
+single-instance lock, so close one before opening the other.
 
 ## Logo
 
 ```
-python apps/desktop/fork/brand/recolor.py --list                 what it would tint
-python apps/desktop/fork/brand/recolor.py                        regenerate from the official runtime copy
-python apps/desktop/fork/brand/recolor.py --color E100FF --check verify no black logo art is left
-python apps/desktop/fork/brand/recolor.py --preview out.png      before/after contact sheet
+python apps/desktop/fork/brand/hermoso.py --list                 what it would draw
+python apps/desktop/fork/brand/hermoso.py                        draw it all from the official runtime copy
+python apps/desktop/fork/brand/hermoso.py --check                verify no official logo art is left
+python apps/desktop/fork/brand/hermoso.py --preview out.png      before/after contact sheet
 ```
 
-Every grey-scale image under `assets/` and `public/` with real black in it is tinted (icons,
-`apple-touch-icon`, the brand mark, the intro texture, the dark variants, the MSIX logos);
-colourful art, photos and real macOS `.icns` containers are left alone. It always reads the
-pristine official files and refuses to tint art that is already tinted.
+The portrait is `fork/brand/hermoso/source.png` (black ink on transparent). Every logo image under
+`assets/` and `public/` that is a square tile in the official art (icons, `apple-touch-icon`, the
+brand mark, the intro texture, the dark variants, the MSIX logos) is redrawn at its own size and
+position, read from the pristine official file; colourful art, photos and real macOS `.icns`
+containers are left alone. Every drawn image carries a `hermoso-art/1` signature, which is what
+`--check` looks for. The dark variant is a black tile with a white outline, a white face and a white
+halo around the figure, so black hair does not melt into the tile (the official dark icon does the
+same). The Mullvad fork's script (`recolor.py`, violet) is kept in the tree because `hermoso.py`
+shares its discovery of the logo files.
 
 If the taskbar or Start Menu shows an old icon after a rebuild: `fork/install-shortcut.ps1`
 (it also asks Explorer to refresh its icon cache).

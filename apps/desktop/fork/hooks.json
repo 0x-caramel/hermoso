@@ -60,6 +60,21 @@
       "text": "com.nousresearch.hermes.mullvad",
       "min": 1,
       "why": "own AppUserModelID: own taskbar button and icon next to the official Hermes"
+    },
+    {
+      "text": "PRODUCT_IDENTITY.displayName",
+      "min": 2,
+      "why": "a fork that renamed itself (Hermoso) is called by the name baked into the identity (fork/identity.json): the window title, the notices, the app menu"
+    },
+    {
+      "text": "FORK_AUMID",
+      "min": 2,
+      "why": "the AppUserModelID: the fork's own app id when its identity carries one, 'com.nousresearch.hermes.mullvad' for the Mullvad fork"
+    },
+    {
+      "text": "displayName: FORK_NAME",
+      "min": 1,
+      "why": "the self-update notices speak in the fork's own name"
     }
   ],
   "electron/preload.ts": [
@@ -100,6 +115,27 @@
       "text": "'vpn'",
       "min": 1,
       "why": "the statusbar chip"
+    }
+  ],
+  "product-identity.cjs": [
+    {
+      "text": "fork/identity-override.cjs",
+      "min": 1,
+      "why": "upstream's one source of names carries the fork's names when a fork build selects its identity (HERMES_FORK_IDENTITY); a no-op otherwise"
+    }
+  ],
+  "vite.config.ts": [
+    {
+      "text": "__FORK_WORDMARK__",
+      "min": 1,
+      "why": "the wordmark a renamed fork writes across an empty chat comes from its identity, at build time"
+    }
+  ],
+  "src/components/chat/intro.tsx": [
+    {
+      "text": "__FORK_WORDMARK__",
+      "min": 2,
+      "why": "the intro wordmark: the fork's own name when the build defines it, 'HERMES AGENT' otherwise"
     }
   ]
 }

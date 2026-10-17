@@ -36,12 +36,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+import { readIdentity } from './identity.mjs'
 import { readStamp, stampEnv } from './pack.mjs'
 
 export const DESKTOP = path.resolve(import.meta.dirname, '..')
 
-const FORK_BRANCH = 'mullvad-vpn'
-const BASE_BRANCH = 'main'
+// Who this fork is (fork/identity.json; the Mullvad fork has none and keeps its defaults): the branch it
+// lives on, the branch that records the official commit under it, its name, the script that draws its art.
+const IDENTITY = readIdentity(DESKTOP)
+const FORK_BRANCH = IDENTITY.branch
+const BASE_BRANCH = IDENTITY.base
 const TARGET_REF = 'refs/fork/target'
 const BRAND_PREFIX = 'brand:'
 const GENERATED_PREFIX = 'generated:'
@@ -231,9 +235,9 @@ function forkAppRunning() {
     return false
   }
 
-  const exe = path.join(DESKTOP, 'release', 'win-unpacked', 'Hermes.exe')
+  const exe = path.join(DESKTOP, 'release', 'win-unpacked', `${IDENTITY.executable}.exe`)
   const script =
-    `(Get-CimInstance Win32_Process -Filter "Name='Hermes.exe'" | ` +
+    `(Get-CimInstance Win32_Process -Filter "Name='${IDENTITY.executable}.exe'" | ` +
     `Where-Object { $_.ExecutablePath -ieq '${exe.replace(/'/g, "''")}' } | Measure-Object).Count`
   const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     encoding: 'utf8',
@@ -383,7 +387,7 @@ function readGeneratedSteps() {
 function recolorArgs(extra) {
   const python = findPython()
 
-  return { args: [...python.args, path.join('fork', 'brand', 'recolor.py'), ...extra], command: python.command }
+  return { args: [...python.args, path.join('fork', ...IDENTITY.brand.script.split('/')), ...extra], command: python.command }
 }
 
 function brandPreview(target, stack) {
@@ -391,7 +395,7 @@ function brandPreview(target, stack) {
   const r = spawnSync(command, args, { cwd: DESKTOP, encoding: 'utf8', windowsHide: true })
 
   if (r.status !== 0) {
-    return { error: (r.stderr || r.stdout || 'recolor.py failed').trim() }
+    return { error: (r.stderr || r.stdout || `${IDENTITY.brand.script} failed`).trim() }
   }
 
   const next = r.stdout
@@ -636,7 +640,7 @@ export function main(argv = process.argv.slice(2)) {
   }
 
   if (adopt && !options.noBuild && forkAppRunning()) {
-    throw new Refusal('Hermes (Mullvad) is running; close it first (the build replaces its files)')
+    throw new Refusal(`${IDENTITY.displayName} is running; close it first (the build replaces its files)`)
   }
 
   const stack = readForkStack()
@@ -743,17 +747,17 @@ function replayAndVerify({ base, options, stack, target }) {
     step('regenerating the logo art from the new official files', () => {
       const { args, command } = recolorArgs(['--git-ref', TARGET_REF])
 
-      mustSucceed(sh(command, args), 'recolor.py')
+      mustSucceed(sh(command, args), IDENTITY.brand.script)
 
       git(['add', '-A', '--', 'apps/desktop/assets', 'apps/desktop/public'])
 
       if (git(['diff', '--cached', '--quiet'], { allowFail: true }).status !== 0) {
-        git(['commit', '-q', '-m', `${BRAND_PREFIX} recolor the logo art to #E100FF (regenerated on ${short(target.sha)})`])
+        git(['commit', '-q', '-m', `${BRAND_PREFIX} ${IDENTITY.brand.commit} (regenerated on ${short(target.sha)})`])
       }
 
       const check = recolorArgs(['--check'])
 
-      mustSucceed(sh(check.command, check.args), 'recolor.py --check')
+      mustSucceed(sh(check.command, check.args), `${IDENTITY.brand.script} --check`)
     })
 
     for (const item of generated) {
@@ -856,7 +860,7 @@ function replayAndVerify({ base, options, stack, target }) {
     `Done. The fork now sits on official ${short(target.sha)} (${stack.replay.length} commit(s) replayed, logo art regenerated).`,
     options.noBuild
       ? 'The app was NOT rebuilt (--no-build): run "node fork/pack.mjs" in apps/desktop.'
-      : 'Start it from the Start Menu: "Hermes (Mullvad)".',
+      : `Start it from the Start Menu: "${IDENTITY.shortcutName}".`,
     `Rollback: git switch ${backup}${options.noBuild ? '' : '; the previous build is release/win-unpacked.bak'}.`
   )
 
@@ -868,7 +872,7 @@ function restoreReleaseIfBroken() {
   const backup = `${dir}.bak`
 
   try {
-    if (!fs.existsSync(path.join(dir, 'Hermes.exe')) && fs.existsSync(backup)) {
+    if (!fs.existsSync(path.join(dir, `${IDENTITY.executable}.exe`)) && fs.existsSync(backup)) {
       fs.rmSync(dir, { force: true, recursive: true })
       fs.renameSync(backup, dir)
       say('restored the previous build from release/win-unpacked.bak')

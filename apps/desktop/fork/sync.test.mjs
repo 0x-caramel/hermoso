@@ -23,6 +23,9 @@ const FORK_DIR = import.meta.dirname
 
 const HAS_PYTHON = spawnSync('python', ['-c', 'import PIL, numpy'], { windowsHide: true }).status === 0
 
+// The identity of the Hermoso fork, as it is checked in: the test follows the file, not a copy of it.
+const HERMOSO = JSON.parse(fs.readFileSync(path.join(FORK_DIR, 'identity.json'), 'utf8'))
+
 // ── tiny PNG writer (RGBA) ──────────────────────────────────────────────────────────────
 
 const CRC_TABLE = (() => {
@@ -175,7 +178,9 @@ function commit(cwd, message, env = {}) {
   spawnSync('git', ['commit', '-q', '-m', message], { cwd, encoding: 'utf8', env: { ...process.env, ...env } })
 }
 
-function world() {
+function world({ identity = null } = {}) {
+  const branch = identity?.branch ?? 'mullvad-vpn'
+  const base = identity?.base ?? 'main'
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fork-sync-test-'))
   const official = path.join(root, 'official')
   const fork = path.join(root, 'fork')
@@ -199,7 +204,11 @@ function world() {
   git(root, 'clone', '-q', '--depth=1', pathToFileURL(official).href, 'fork')
   git(fork, 'config', 'user.name', 'Fork')
   git(fork, 'config', 'user.email', 'fork@example.com')
-  git(fork, 'switch', '-q', '-c', 'mullvad-vpn')
+  if (base !== 'main') {
+    git(fork, 'branch', base, 'main')
+  }
+
+  git(fork, 'switch', '-q', '-c', branch)
 
   put(fork, 'apps/desktop/electron/main.ts', MAIN_FORK)
   put(fork, 'apps/desktop/electron/vpn.ts', 'export const vpn = {}\n')
@@ -209,24 +218,36 @@ function world() {
   fs.mkdirSync(path.join(desktop, 'fork', 'brand'), { recursive: true })
   fs.copyFileSync(path.join(FORK_DIR, 'sync.mjs'), path.join(desktop, 'fork', 'sync.mjs'))
   fs.copyFileSync(path.join(FORK_DIR, 'pack.mjs'), path.join(desktop, 'fork', 'pack.mjs'))
+  fs.copyFileSync(path.join(FORK_DIR, 'identity.mjs'), path.join(desktop, 'fork', 'identity.mjs'))
+  fs.copyFileSync(path.join(FORK_DIR, 'identity.cjs'), path.join(desktop, 'fork', 'identity.cjs'))
   fs.copyFileSync(path.join(FORK_DIR, 'brand', 'recolor.py'), path.join(desktop, 'fork', 'brand', 'recolor.py'))
+
+  if (identity) {
+    fs.mkdirSync(path.join(desktop, 'fork', 'brand', 'hermoso'), { recursive: true })
+    fs.copyFileSync(path.join(FORK_DIR, 'brand', 'hermoso.py'), path.join(desktop, 'fork', 'brand', 'hermoso.py'))
+    fs.copyFileSync(path.join(FORK_DIR, 'brand', 'hermoso', 'source.png'), path.join(desktop, 'fork', 'brand', 'hermoso', 'source.png'))
+    put(fork, 'apps/desktop/fork/identity.json', JSON.stringify(identity))
+  }
+
   put(fork, 'apps/desktop/fork/hooks.json', HOOKS)
   put(fork, 'apps/desktop/fork/generated.json', GENERATED)
   commit(fork, 'feat: fork tooling')
 
-  const tint = spawnSync('python', [path.join('fork', 'brand', 'recolor.py'), '--source', desktop], {
+  const tint = spawnSync('python', [path.join('fork', ...(identity?.brand?.script ?? 'brand/recolor.py').split('/')), '--source', desktop], {
     cwd: desktop,
     encoding: 'utf8',
     windowsHide: true
   })
 
   assert.equal(tint.status, 0, tint.stdout + tint.stderr)
-  commit(fork, 'brand: recolor the logo art')
+  commit(fork, `brand: ${identity?.brand?.commit ?? 'recolor the logo art'}`)
 
   generate(fork)
   commit(fork, 'generated: key catalog')
 
   return {
+    base,
+    branch,
     desktop,
     fork,
     official,
@@ -250,18 +271,18 @@ function state(w) {
   return {
     branch: git(w.fork, 'rev-parse', '--abbrev-ref', 'HEAD'),
     branches: git(w.fork, 'for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n').sort(),
-    main: git(w.fork, 'rev-parse', 'main'),
+    main: git(w.fork, 'rev-parse', w.base),
     status: git(w.fork, 'status', '--porcelain'),
-    tip: git(w.fork, 'rev-parse', 'mullvad-vpn')
+    tip: git(w.fork, 'rev-parse', w.branch)
   }
 }
 
 const read = (w, rel) => fs.readFileSync(path.join(w.desktop, rel))
 
 /** Runs one scenario in a fresh world and always cleans up. */
-function scenario(name, fn) {
+function scenario(name, fn, options = {}) {
   test(name, { skip: !HAS_PYTHON && 'needs python with pillow + numpy' }, async () => {
-    const w = world()
+    const w = world(options)
 
     try {
       await fn(w)
@@ -459,6 +480,55 @@ scenario('refuses to move to an OLDER official version unless forced', w => {
   assert.equal(r.status, 2, output(r))
   assert.match(output(r), /OLDER/)
 })
+
+scenario(
+  'a fork with its own identity (Hermoso) moves on its own branches, leaves the other fork alone and draws its own art',
+  w => {
+    assert.equal(w.branch, HERMOSO.branch)
+    assert.equal(w.base, HERMOSO.base)
+
+    const before = state(w)
+    const otherForkBase = git(w.fork, 'rev-parse', 'main')
+
+    // `main` is where the OTHER fork (Hermes (Mullvad)) records its official commit: it must stay put
+    assert.equal(otherForkBase, before.main)
+
+    put(w.official, 'apps/desktop/electron/main.ts', MAIN_V1.replace('// main process', '// main process (v2)'))
+    commit(w.official, 'official v2')
+
+    const r = sync(w, ['--no-verify', '--no-build'])
+
+    assert.equal(r.status, 0, output(r))
+
+    const after = state(w)
+
+    assert.equal(after.branch, HERMOSO.branch)
+    assert.notEqual(after.tip, before.tip)
+    assert.equal(after.main, git(w.official, 'rev-parse', 'HEAD'), 'the base branch records the new official commit')
+    assert.equal(git(w.fork, 'rev-parse', 'main'), otherForkBase, 'the other fork`s base branch is not touched')
+    assert.equal(after.status, '', 'the working tree is clean')
+    assert.ok(after.branches.some(b => b.startsWith(`backup/${HERMOSO.branch}-`)), 'the old tip is kept as a backup branch')
+
+    assert.deepEqual(
+      git(w.fork, 'log', '--format=%s', `${HERMOSO.base}..${HERMOSO.branch}`)
+        .split('\n')
+        .map(subject => subject.replace(/ \(regenerated on [0-9a-f]+\)$/, '')),
+      ['generated: key catalog', `brand: ${HERMOSO.brand.commit}`, 'feat: fork tooling', 'feat: vpn gate']
+    )
+
+    // the art is Hermoso's (its signature is inside every image), not the Mullvad fork's tint
+    assert.ok(read(w, 'assets/icon.png').includes('hermoso-art/1'), 'the icon is drawn by the Hermoso script')
+
+    const check = spawnSync('python', [path.join('fork', 'brand', 'hermoso.py'), '--check'], {
+      cwd: w.desktop,
+      encoding: 'utf8',
+      windowsHide: true
+    })
+
+    assert.equal(check.status, 0, check.stdout + check.stderr)
+  },
+  { identity: HERMOSO }
+)
 
 test('parseMergeTree reads the tree, the conflicted files and their kinds', () => {
   const parsed = parseMergeTree(

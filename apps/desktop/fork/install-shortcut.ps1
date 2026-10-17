@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Creates (or refreshes) the Start Menu shortcut "Hermes (Mullvad)" for this fork.
+  Creates (or refreshes) the Start Menu shortcut of this fork ("Hermes (Mullvad)", "Hermoso": see fork/identity.json).
 
 .DESCRIPTION
   The shortcut carries the fork's own AppUserModelID (the id electron/main.ts sets) and the fork's
@@ -15,15 +15,28 @@
     powershell -ExecutionPolicy Bypass -File fork\install-shortcut.ps1 -Desktop     (also on the Desktop)
 #>
 param(
-  [string] $Exe = (Join-Path $PSScriptRoot '..\release\win-unpacked\Hermes.exe'),
-  [string] $Name = 'Hermes (Mullvad)',
-  # Keep in sync with app.setAppUserModelId() in electron/main.ts and build.appId in package.json.
-  [string] $AppId = 'com.nousresearch.hermes.mullvad',
+  # Empty = what fork/identity.json says (the Mullvad fork has no such file and keeps its own defaults).
+  [string] $Exe = '',
+  [string] $Name = '',
+  # Keep in sync with app.setAppUserModelId() in electron/main.ts (the baked identity's appId).
+  [string] $AppId = '',
   [string] $Folder = (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
   [switch] $Desktop
 )
 
 $ErrorActionPreference = 'Stop'
+
+$identity = $null
+$identityFile = Join-Path $PSScriptRoot 'identity.json'
+if (Test-Path -LiteralPath $identityFile) {
+  $identity = (Get-Content -LiteralPath $identityFile -Raw -Encoding UTF8) | ConvertFrom-Json
+}
+function FromIdentity($field, $fallback) { if ($identity -and $identity.$field) { return [string]$identity.$field } else { return $fallback } }
+
+if (-not $Name) { $Name = FromIdentity 'shortcutName' 'Hermes (Mullvad)' }
+if (-not $AppId) { $AppId = FromIdentity 'appId' 'com.nousresearch.hermes.mullvad' }
+if (-not $Exe) { $Exe = Join-Path $PSScriptRoot ('..\release\win-unpacked\' + (FromIdentity 'executable' 'Hermes') + '.exe') }
+$Description = if ($identity) { (FromIdentity 'displayName' $Name) } else { 'Hermes with the Mullvad VPN startup gate' }
 
 if (-not ('AppShortcut' -as [type])) {
   # Windows PowerShell 5.1 compiles this as C# 5: no newer syntax below.
@@ -135,7 +148,7 @@ public static class AppShortcut
 }
 
 if (-not (Test-Path -LiteralPath $Exe)) {
-  throw "Hermes.exe not found at $Exe. Build it first: npm run pack (in apps/desktop)."
+  throw "$Exe not found. Build it first: node fork/pack.mjs (in apps/desktop)."
 }
 
 $exePath = (Resolve-Path -LiteralPath $Exe).Path
@@ -148,7 +161,7 @@ if ($Desktop) {
 
 foreach ($lnk in $targets) {
   New-Item -ItemType Directory -Force -Path (Split-Path -Parent $lnk) | Out-Null
-  [AppShortcut]::Write($lnk, $exePath, $workDir, $exePath, 0, 'Hermes with the Mullvad VPN startup gate', $AppId)
+  [AppShortcut]::Write($lnk, $exePath, $workDir, $exePath, 0, $Description, $AppId)
 
   $back = [AppShortcut]::ReadAppId($lnk)
   if ($back -ne $AppId) {
