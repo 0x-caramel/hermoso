@@ -67,6 +67,7 @@ function make(
     ghost?: any
     interfaces?: any
     source?: string
+    tunnel?: string
     windows?: HermosoWindow[]
   } = {}
 ) {
@@ -79,7 +80,7 @@ function make(
   const vpnState = {
     gate: 'ready',
     settings: { block: true, city: null, country: null, enabled: true },
-    tunnel: 'connected',
+    tunnel: extra.tunnel ?? 'connected',
     waived: false
   }
 
@@ -832,6 +833,77 @@ describe('what the shield did, counted', () => {
   })
 })
 
+describe('what a launch is not', () => {
+  it('does not count the tunnel still coming up at launch as a freeze: nothing was running to hold', async () => {
+    const h = make({}, { tunnel: 'unknown' })
+
+    // still frozen, but the tunnel's state changes on the way up: that is not a new freeze either
+    h.vpnState.tunnel = 'connecting'
+    h.hermoso.shield.check()
+    expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({})
+
+    h.vpnState.tunnel = 'connected'
+    h.hermoso.shield.check()
+    expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({})
+    expect(((await h.hermoso.call('aura.get')) as any).points).toBe(0)
+
+    // a drop after that is one, counted when it ends
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    try {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 0)))
+      h.vpnState.tunnel = 'disconnected'
+      h.hermoso.shield.check()
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 8)))
+      h.vpnState.tunnel = 'connected'
+      h.hermoso.shield.check()
+      expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ freezes: 1, frozenSeconds: 8 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not count a status read that blinks: a freeze that is over in a moment is not a drop', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    try {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 0)))
+
+      const h = make()
+
+      h.vpnState.tunnel = 'unknown'
+      h.hermoso.shield.check()
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 1)))
+      h.vpnState.tunnel = 'connected'
+      h.hermoso.shield.check()
+
+      expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({})
+      expect(((await h.hermoso.call('aura.get')) as any).points).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts a drop that is still on when the app goes, if it was long enough to be one', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    try {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 0)))
+
+      const h = make()
+
+      h.vpnState.tunnel = 'disconnected'
+      h.hermoso.shield.check()
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 20)))
+      await h.hermoso.beforeQuit()
+
+      expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ freezes: 1, frozenSeconds: 20 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('the time machine', () => {
   it('asks Hermes to snapshot before the agent first changes a file in a turn, by the one variable the backend reads', async () => {
     const env: NodeJS.ProcessEnv = {}
@@ -879,6 +951,102 @@ describe('the time machine', () => {
 
     expect(await h.hermoso.call('timemachine.rewound')).toBe(true)
     expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ rewinds: 1 })
+  })
+})
+
+describe('aura', () => {
+  const auras = (h: ReturnType<typeof make>) =>
+    h.sent.filter(event => event.payload?.type === 'aura').map(event => event.payload.aura)
+
+  it('starts at nothing, quiet, and says since when Hermoso has been counting', async () => {
+    const h = make()
+    const aura: any = await h.hermoso.call('aura.get')
+
+    expect(aura).toMatchObject({ level: 'quiet', points: 0 })
+    expect(aura.since).toBeGreaterThan(0)
+    expect(aura.breakdown).toHaveLength(7)
+  })
+
+  it('is worked out from the counters when asked, so it can never differ from what was counted', async () => {
+    const h = make()
+
+    await h.hermoso.call('timemachine.rewound')
+    await h.hermoso.call('timemachine.rewound')
+    expect(await h.hermoso.call('aura.get')).toMatchObject({ level: 'glow', points: 30 })
+    expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ rewinds: 2 })
+  })
+
+  it('counts a trip that really happened, and not one that did not', async () => {
+    const h = make()
+
+    expect(await h.hermoso.call('teleport.jump', { country: 'zz' })).toMatchObject({
+      code: 'unknown-destination',
+      ok: false
+    })
+    expect(((await h.hermoso.call('stats.get')) as any).counters.teleports).toBeUndefined()
+
+    expect(await h.hermoso.call('teleport.jump', { city: 'fra', country: 'de', minutes: 3 })).toMatchObject({
+      ok: true
+    })
+    expect(((await h.hermoso.call('stats.get')) as any).counters.teleports).toBe(1)
+    expect(await h.hermoso.call('aura.get')).toMatchObject({ points: 10 })
+  })
+
+  it('counts the agent’s trip too, once the person said yes', async () => {
+    const h = make()
+
+    await h.hermoso.prepare(h.home)
+
+    const pending = bridge(h.home, 'POST', '/v1/teleport/jump', { country: 'de', minutes: 3, reason: 'a test' })
+
+    await h.hermoso.call('consent.answer', { answer: 'once', id: (await waitForPrompt(h)).id })
+    expect((await pending).body.ok).toBe(true)
+    expect(((await h.hermoso.call('stats.get')) as any).counters.teleports).toBe(1)
+  })
+
+  it('tells every window when the result changes, with the whole picture, and stays quiet when it does not', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+
+    try {
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 0)))
+
+      const h = make()
+
+      h.vpnState.tunnel = 'disconnected'
+      h.hermoso.shield.check()
+
+      // a freeze is counted when it ends
+      expect(auras(h)).toHaveLength(0)
+
+      // five seconds later it does: worth 25, the five seconds are worth nothing yet and push nothing of their own
+      vi.setSystemTime(new Date(Date.UTC(2026, 9, 17, 12, 0, 5)))
+      h.vpnState.tunnel = 'connected'
+      h.hermoso.shield.check()
+      expect(auras(h)).toHaveLength(1)
+      expect(auras(h)[0]).toMatchObject({ level: 'quiet', points: 25 })
+      expect(auras(h)[0].breakdown.find((line: any) => line.key === 'freezes')).toMatchObject({ count: 1, points: 25 })
+
+      // a rewind is, and the level changes with it
+      await h.hermoso.call('timemachine.rewound')
+      expect(auras(h)).toHaveLength(2)
+      expect(auras(h)[1]).toMatchObject({ level: 'glow', points: 40 })
+      expect(
+        h.sent.filter(event => event.payload?.type === 'aura').every(event => event.channel === EVENT_CHANNEL)
+      ).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a risky thing refused outright is worth something, and is pushed as it happens', async () => {
+    const h = make()
+    const ask = (home: string, body: Record<string, unknown>) => bridge(home, 'POST', '/v1/guardian/ask', body)
+
+    await h.hermoso.prepare(h.home)
+    // worth 10, pushed once
+    await ask(h.home, { detail: 'rm -rf /', rule: 'catastrophic', tool: 'terminal' })
+    expect(auras(h)).toHaveLength(1)
+    expect(auras(h)[0]).toMatchObject({ points: 10 })
   })
 })
 

@@ -124,6 +124,11 @@ test.describe('Hermoso Shield through the real agent', () => {
       expect(report).toContain('not "no packet ever left"')
       expect(report).toContain('Tunnel exit: Sweden')
 
+      // ── the aura counted the two drops (a launch with the tunnel still coming up is not one) ──
+      const aura = await askHermoso<any>(page, 'aura.get')
+
+      expect(aura.breakdown.find((line: { key: string }) => line.key === 'freezes').count).toBe(2)
+
       // ── "Always require VPN", from the Shield section of the page ──
       await page.getByRole('button', { name: 'Hermoso' }).first().click()
       await expect(page.getByTestId('shield-headline')).toHaveText('Protected')

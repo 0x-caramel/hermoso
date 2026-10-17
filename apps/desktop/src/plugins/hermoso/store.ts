@@ -9,6 +9,8 @@ import { atom, host } from '@hermes/plugin-sdk'
 import {
   type AgentLink,
   type AllowedItem,
+  type AuraView,
+  CALM_AURA,
   CALM_GHOST,
   CALM_GUARDIAN,
   CALM_SHIELD,
@@ -22,6 +24,7 @@ import {
   hermosoAvailable,
   hermosoCall,
   IDLE_TELEPORT,
+  isAuraView,
   type JumpRequest,
   onHermosoEvent,
   type RadarView,
@@ -43,6 +46,9 @@ export const $timeMachine = atom<TimeMachineView>(CALM_TIME_MACHINE)
 
 /** Whether this window is a ghost (a Hermoso that keeps nothing), and whether it can open one. */
 export const $ghost = atom<GhostView>(CALM_GHOST)
+
+/** Aura: points and a level from what Hermoso has done for the person. For fun; nothing depends on it. */
+export const $aura = atom<AuraView>(CALM_AURA)
 
 /** The guardian: switched on or off, what it asked and refused, its last decisions. */
 export const $guardian = atom<GuardianView>(CALM_GUARDIAN)
@@ -139,6 +145,11 @@ export function startHermoso(): () => void {
 
           break
 
+        case 'aura':
+          $aura.set(event.aura)
+
+          break
+
         case 'consent-closed':
           $consent.set($consent.get().filter(entry => entry.id !== event.id))
           void loadAllowed()
@@ -168,6 +179,7 @@ export function startHermoso(): () => void {
   void loadGuardian()
   void loadTimeMachine()
   void loadGhost()
+  void loadAura()
   void loadAllowed()
 
   const vpn = vpnBridge()
@@ -390,6 +402,16 @@ export async function restoreSnapshot(sessionId: string, hash: string): Promise<
     return parseRewindOutput(answer?.output)
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error), success: false }
+  }
+}
+
+// ── aura ──
+
+export async function loadAura(): Promise<void> {
+  const aura = await hermosoCall<unknown>('aura.get')
+
+  if (isAuraView(aura)) {
+    $aura.set(aura)
   }
 }
 

@@ -105,6 +105,13 @@ test.describe('Hermoso Guardian through the real agent', () => {
       await expect(journal).toContainText('Denied')
       await expect(page.getByTestId('guardian-totals')).toContainText('refused outright')
 
+      // ── and the aura counted it: four questions asked (5 each) and three things refused (10 each) ──
+      await expect(page.getByTestId('aura-level')).toHaveText('Glowing')
+      await expect(page.getByTestId('aura-points')).toHaveText('50 aura')
+      await expect(page.getByTestId('aura-lines')).toContainText('4 × 5 = +20')
+      await expect(page.getByTestId('aura-lines')).toContainText('3 × 10 = +30')
+      await expect(page.getByRole('button', { name: 'Aura: Glowing · 50' })).toBeVisible()
+
       // ── switched off: nothing is asked, but what is never allowed is still refused ──
       const review = page.getByRole('switch', { name: 'Review risky commands' })
 

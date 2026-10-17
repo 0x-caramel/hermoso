@@ -16,7 +16,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { launchHermoso, say, waitForBackendReady } from './hermoso-launch'
+import { askHermoso, launchHermoso, say, waitForBackendReady } from './hermoso-launch'
 import { TM_DONE, TM_WRITE } from './hermoso-mock-model'
 import { expect, test } from './test'
 
@@ -73,6 +73,11 @@ test.describe('Hermoso Time Machine through the real agent', () => {
       expect(fs.existsSync(path.join(project, 'a.txt')), 'a.txt is still there after the rewind').toBe(false)
       expect(fs.existsSync(path.join(project, 'b.txt')), 'b.txt is still there after the rewind').toBe(false)
       expect(fs.readFileSync(path.join(project, 'seed.txt'), 'utf8')).toBe('seed')
+
+      // ── the aura counted the rewind, and nothing else: no freeze for a launch, no question, no trip ──
+      await expect
+        .poll(async () => (await askHermoso<{ points: number }>(page, 'aura.get')).points, { timeout: 10_000 })
+        .toBe(15)
     } finally {
       await run.cleanup()
       fs.rmSync(project, { force: true, recursive: true })

@@ -4,20 +4,51 @@
  *
  * Prerequisite: `npm run build` (dist/ exists). The backend runs from HERMES_E2E_HERMES_ROOT (a Hermes checkout or
  * runtime with its Python environment installed; a fork without one points it at %LOCALAPPDATA%\Hermes\hermes-agent).
+ *
+ * HERMOSO_E2E_PACKED=1 runs the very same specs against the packed `Hermoso.exe` (`node fork/pack.mjs` first) instead
+ * of `electron .`: what a person installs, with the same scripted model and scripted Mullvad.
  */
 
+import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
+import * as os from 'node:os'
 import * as path from 'node:path'
 
-import type { Page } from '@playwright/test'
+import { _electron, type Browser, chromium, type ElectronApplication, type Page } from '@playwright/test'
 
 import { writeEnvFile, writeMockProviderConfig } from '../../../tests-js/scripts/mock-provider-config'
 
 import { buildAppEnv, createSandbox, launchDesktop } from './fixtures'
 import { type HermosoMock, startHermosoMock } from './hermoso-mock-model'
-import { expect } from './test'
+import { expect, installErrorBannerGuard } from './test'
 
 const FAKE_CLI = path.resolve(import.meta.dirname, 'fake-mullvad.mjs')
+
+/** What `fork/pack.mjs` makes: the app as a person installs it. */
+const PACKED_EXE = path.resolve(import.meta.dirname, '..', 'release', 'win-unpacked', 'Hermoso.exe')
+
+async function launchPacked(env: Record<string, string>): Promise<{ app: ElectronApplication; page: Page }> {
+  if (!fs.existsSync(PACKED_EXE)) {
+    throw new Error(`${PACKED_EXE} is not there: run \`node fork/pack.mjs\` first`)
+  }
+
+  // The packed app has its own renderer: nothing may point it at a dev server.
+  const clean = { ...env }
+
+  delete (clean as Record<string, string | undefined>).HERMES_DESKTOP_DEV_SERVER
+
+  const app = await _electron.launch({
+    args: ['--disable-gpu', '--no-sandbox'],
+    env: clean,
+    executablePath: PACKED_EXE
+  })
+
+  const page = await app.firstWindow()
+
+  installErrorBannerGuard(page)
+
+  return { app, page }
+}
 
 export interface FakeState {
   lockdown?: boolean
@@ -58,7 +89,7 @@ export async function launchHermoso(extraEnv: Record<string, string> = {}): Prom
     ...extraEnv
   })
 
-  const { app, page } = await launchDesktop(env)
+  const { app, page } = process.env.HERMOSO_E2E_PACKED === '1' ? await launchPacked(env) : await launchDesktop(env)
 
   return {
     cleanup: async () => {
@@ -129,3 +160,57 @@ export function askHermoso<T = any>(page: Page, method: string, params?: unknown
     [method, params] as const
   ) as Promise<T>
 }
+
+/** Connect to a second Hermoso (a ghost) through the debugging port a test gave it, and find its app window. */
+export async function connectToGhost(port: number): Promise<{ browser: Browser; page: Page }> {
+  let last: unknown = null
+  let seen = ''
+
+  for (let attempt = 0; attempt < 120; attempt++) {
+    try {
+      const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`)
+
+      // The app's own window is the one that has the desktop bridge; the process may show others first.
+      const pages = browser.contexts().flatMap(context => context.pages())
+
+      seen = pages.map(page => page.url()).join(' | ') || '(no pages)'
+
+      for (const page of pages) {
+        const isApp = await page
+          .evaluate(() => Boolean((window as unknown as { hermesDesktop?: unknown }).hermesDesktop))
+          .catch(() => false)
+
+        if (isApp) {
+          return { browser, page }
+        }
+      }
+
+      await browser.close().catch(() => undefined)
+    } catch (error) {
+      last = error
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000))
+  }
+
+  throw new Error(`the ghost window never answered on port ${port}: ${String(last)}; pages: ${seen}`)
+}
+
+/** The ghost folders that exist in the temporary folder right now. */
+export const ghostFolders = () =>
+  fs
+    .readdirSync(os.tmpdir())
+    .filter(name => /^hermoso-ghost-[0-9a-f]{12}$/.test(name))
+    .map(name => path.join(os.tmpdir(), name))
+
+/** Stop every ghost process (a test's safety net: a ghost that was not wiped must not outlive it). */
+export const killGhosts = () =>
+  spawnSync(
+    'powershell.exe',
+    [
+      '-NoProfile',
+      '-Command',
+      "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '--hermoso-ghost' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+    ],
+    { windowsHide: true }
+  )

@@ -182,6 +182,44 @@ describe('counting', () => {
   })
 })
 
+describe('telling a listener', () => {
+  const memoryStore = (): StatsStore => ({ read: () => null, write: () => {} })
+
+  it('says so right after a counter or the journal changes or it starts again, and not when nothing changed', () => {
+    const onChange = vi.fn()
+    const stats = createStats({ onChange, schedule: () => () => {}, store: memoryStore() })
+
+    stats.bump('freezes')
+    expect(onChange).toHaveBeenCalledTimes(1)
+    // ignored: not a plain word, and nothing to add
+    stats.bump('not a name')
+    stats.bump('freezes', 0)
+    expect(onChange).toHaveBeenCalledTimes(1)
+
+    stats.event({ at: 1, decision: 'denied', detail: 'x', rule: 'delete-many', title: 't', tool: 'terminal' })
+    expect(onChange).toHaveBeenCalledTimes(2)
+    stats.reset()
+    expect(onChange).toHaveBeenCalledTimes(3)
+  })
+
+  it('never lets a listener that fails stop the counting', () => {
+    const log = vi.fn()
+
+    const stats = createStats({
+      log,
+      onChange: () => {
+        throw new Error('window gone')
+      },
+      schedule: () => () => {},
+      store: memoryStore()
+    })
+
+    stats.bump('rewinds')
+    expect(stats.get().counters.rewinds).toBe(1)
+    expect(log).toHaveBeenCalledWith('[stats] a listener failed: window gone')
+  })
+})
+
 describe('the file', () => {
   it('is written whole and read back, and a missing or damaged file reads as nothing', () => {
     const file = path.join(temp(), 'nested', 'stats.json')

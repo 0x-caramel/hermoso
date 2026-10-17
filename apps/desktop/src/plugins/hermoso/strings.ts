@@ -3,6 +3,13 @@
  * app's own language files so an upstream update never has to be merged with them.
  */
 
+/** An Electron accelerator in the words a person uses for it ("CommandOrControl" is Ctrl, or Cmd on a Mac). */
+export function friendlyKey(accelerator: string): string {
+  const mac = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform)
+
+  return accelerator.replace('CommandOrControl', mac ? 'Cmd' : 'Ctrl')
+}
+
 export const STRINGS = {
   agentTools: {
     hint: 'The agent’s tools appear in its tool list while Hermoso is running, and disappear when it is not.',
@@ -15,6 +22,42 @@ export const STRINGS = {
     hint: 'The agent may do these without asking you.',
     remove: 'Ask again',
     title: 'Allowed without asking'
+  },
+  aura: {
+    blurb: 'Aura grows with what Hermoso does for you. It is just for fun: nothing depends on it.',
+    chipTitle: (level: string, points: number) => `Aura: ${level} · ${points}`,
+    levels: {
+      beyond: 'Beyond jacked',
+      glow: 'Glowing',
+      jacked: 'AURA JACKED',
+      quiet: 'Quiet',
+      radiant: 'Radiant',
+      strong: 'Strong'
+    } as Record<string, string>,
+    lines: {
+      freezes: 'Agent held still when the VPN dropped',
+      frozenHalfMinutes: 'Half minutes of standing guard',
+      ghosts: 'Ghost windows opened',
+      guardianAsked: 'Questions asked before risky actions',
+      guardianRefused: 'Risky actions refused',
+      rewinds: 'Projects rewound',
+      teleports: 'Teleports'
+    } as Record<string, string>,
+    next: (left: number, level: string) => `${left} more for ${level}`,
+    nothingYet: 'No aura yet. It grows when Hermoso steps in for you.',
+    points: (n: number) => `${n} aura`,
+    progressLabel: (level: string) => `Progress towards ${level}`,
+    since: (date: string) => `Counting since ${date}.`,
+    taglines: {
+      beyond: 'Beyond jacked. A legend of the household.',
+      glow: 'The first sparks: Hermoso has stepped in.',
+      jacked: 'The big brother is in the room.',
+      quiet: 'Calm. Nothing has needed protecting yet.',
+      radiant: 'A steady glow. Hermoso keeps watch.',
+      strong: 'Little gets past him.'
+    } as Record<string, string>,
+    title: 'Aura',
+    top: 'The top. Nothing above this.'
   },
   brand: {
     motto: 'The brother who protects.',
@@ -42,7 +85,7 @@ export const STRINGS = {
     open: 'Open a ghost window',
     opened: 'The ghost window is opening…',
     panic: 'Panic: delete everything and close',
-    panicHint: (key: string) => `Or press ${key} from anywhere.`,
+    panicHint: (key: string) => `Or press ${friendlyKey(key)} from anywhere.`,
     title: 'Ghost',
     whatItCopies:
       'Your model setup, keys and VPN choice are copied into the temporary folder for the session, and deleted with it. Your own chats and memories are not.'

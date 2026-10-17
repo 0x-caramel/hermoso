@@ -119,7 +119,8 @@ describe('inside a ghost', () => {
 
     expect(screen.getByTestId('ghost-banner').textContent).toBe('This is a ghost window: nothing is kept.')
     expect(screen.getByRole('button', { name: 'Panic: delete everything and close' })).toBeTruthy()
-    expect(screen.getByText(`Or press ${KEY} from anywhere.`)).toBeTruthy()
+    // the key is said the way a person says it, not as the accelerator Electron is given
+    expect(screen.getByText('Or press Ctrl+Alt+Shift+Backspace from anywhere.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /Open a ghost window/ })).toBeNull()
   })
 

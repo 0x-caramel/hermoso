@@ -16,6 +16,7 @@ import {
   STATUSBAR_AREAS
 } from '@hermes/plugin-sdk'
 
+import { AuraChip } from './aura-chip'
 import { GhostChip } from './ghost-chip'
 import { HermosoPage } from './page'
 import { ShieldChip } from './shield-chip'
@@ -27,7 +28,7 @@ const PATH = '/hermoso'
 
 const plugin: HermesPlugin = {
   description:
-    'The shield, the guardian, the Time Machine, Teleport and the protections that ride along with the agent.',
+    'The shield, the guardian, the Time Machine, the ghost window, Teleport and the protections that ride along with the agent.',
   id: 'hermoso',
   name: 'Hermoso',
   register(ctx) {
@@ -40,6 +41,12 @@ const plugin: HermesPlugin = {
         id: 'page',
         render: () => <HermosoPage />,
         title: STRINGS.nav
+      },
+      {
+        area: STATUSBAR_AREAS.right,
+        id: 'aura',
+        order: 82,
+        render: () => <AuraChip />
       },
       {
         area: STATUSBAR_AREAS.right,
@@ -77,6 +84,8 @@ const plugin: HermesPlugin = {
             'time machine',
             'rewind',
             'snapshot',
+            'ghost',
+            'aura',
             'teleport',
             'vpn'
           ],

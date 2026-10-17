@@ -99,6 +99,19 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   always does. From source the ghost is `electron <appPath> --hermoso-ghost` (decided by `app.isPackaged`, not by
   `IS_PACKAGED`, which an environment variable can set); it keeps `--disable-gpu` / `--no-sandbox` from its parent.
   `HERMOSO_GHOST_DEBUG_PORT` (a test's own environment) gives the ghost a debugging port so a spec can drive its window.
+- **Aura** (`aura.ts`, glue in `index.ts`, window `aura-panel.tsx` / `aura-chip.tsx`): a glow that grows with what
+  Hermoso did for the person. Pure arithmetic over the counters `stats.json` already keeps (`freezes`, `frozenSeconds`,
+  `guardianAsked` / `Denied` / `Blocked`, `rewinds`, `ghosts`, `teleports`), so it can never differ from what was
+  counted, is never stored itself, and decides nothing: points per kind (a freeze 25, a refusal 10, a question asked 5,
+  a rewind 15, a ghost 20, a trip 10, every half minute of standing guard 1) and six levels (Quiet, Glowing, Radiant,
+  Strong, AURA JACKED, Beyond jacked, from 0 / 30 / 100 / 250 / 600 / 1500 points). Main answers `aura.get` and pushes
+  `{type: 'aura'}` to every window when a counter changes and the result is different (`stats.ts` tells a listener
+  after each change; a listener that throws can not break the counting). The page shows it first, the status bar shows
+  a spark and the number once there is something to count, and a ghost shows none (it keeps nothing, so it counts
+  nothing). A freeze counts only when it follows a calm moment (a launch with the tunnel still coming up is not a drop:
+  the agent had not started) and only when it lasted long enough to be one (`MIN_FREEZE_MS`: a status read that fails
+  for a second is not a drop either). `teleports` counts a trip that really happened (`createTeleport`'s
+  `onEvent: jumped`), by the person or by the agent after a yes.
 - **Tool search**: Hermes defers a plugin's tools behind `tool_search` / `tool_describe` / `tool_call` and lists each
   by the first sentence of its description, clipped at 60 characters. Keep that sentence short and plain (a test
   keeps it). A `tool_call` is unwrapped before the hooks run, so `pre_tool_call` sees the real tool name.

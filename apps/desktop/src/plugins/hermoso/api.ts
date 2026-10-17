@@ -153,6 +153,62 @@ export const CALM_GHOST: GhostView = { canOpen: false, ghost: false, key: '' }
 export type GhostOpenResult =
   { code: string; message: string; ok: false } | { dir: string; ok: true; pid: null | number }
 
+export type AuraKey =
+  'freezes' | 'frozenHalfMinutes' | 'ghosts' | 'guardianAsked' | 'guardianRefused' | 'rewinds' | 'teleports'
+
+export type AuraLevelId = 'beyond' | 'glow' | 'jacked' | 'quiet' | 'radiant' | 'strong'
+
+export interface AuraLine {
+  count: number
+  each: number
+  key: AuraKey
+  points: number
+}
+
+/** Aura as main works it out from the counts it keeps: points, a level, and what earned them. For fun only. */
+export interface AuraView {
+  breakdown: AuraLine[]
+  /** How far into this level the points are. */
+  into: number
+  level: AuraLevelId
+  /** The next level, or null at the top. */
+  next: null | { at: number; id: AuraLevelId }
+  points: number
+  /** When Hermoso began to count (epoch ms). */
+  since: number
+  /** From the start of this level to the start of the next (0 at the top). */
+  span: number
+}
+
+export const CALM_AURA: AuraView = {
+  breakdown: [],
+  into: 0,
+  level: 'quiet',
+  next: { at: 30, id: 'glow' },
+  points: 0,
+  since: 0,
+  span: 30
+}
+
+const AURA_LEVELS = new Set<string>(['beyond', 'glow', 'jacked', 'quiet', 'radiant', 'strong'])
+
+/** Whether something main sent is an aura the window can paint (a damaged answer must not break the page). */
+export function isAuraView(value: unknown): value is AuraView {
+  const aura = value as Partial<AuraView> | null
+
+  return Boolean(
+    aura &&
+    typeof aura === 'object' &&
+    Number.isFinite(aura.points) &&
+    Number.isFinite(aura.into) &&
+    Number.isFinite(aura.span) &&
+    typeof aura.level === 'string' &&
+    AURA_LEVELS.has(aura.level) &&
+    Array.isArray(aura.breakdown) &&
+    (aura.next === null || (typeof aura.next === 'object' && Number.isFinite(aura.next?.at)))
+  )
+}
+
 export type Route = 'lan' | 'loopback' | 'outside' | 'tunnel'
 
 export interface RadarConnection {
@@ -230,6 +286,7 @@ export function onHermosoEvent(callback: (payload: unknown) => void): () => void
 
 type HermosoEvent =
   | { agent: AgentLink; type: 'agent' }
+  | { aura: AuraView; type: 'aura' }
   | { event: GuardianEvent; type: 'guardian' }
   | { id: string; type: 'consent-closed' }
   | { prompt: ConsentPrompt; type: 'consent' }
@@ -239,6 +296,7 @@ type HermosoEvent =
 export function readEvent(payload: unknown): HermosoEvent | null {
   const event = payload as {
     agent?: unknown
+    aura?: unknown
     event?: unknown
     id?: unknown
     prompt?: unknown
@@ -268,6 +326,9 @@ export function readEvent(payload: unknown): HermosoEvent | null {
 
     case 'agent':
       return event.agent && typeof event.agent === 'object' ? (event as HermosoEvent) : null
+
+    case 'aura':
+      return isAuraView(event.aura) ? (event as HermosoEvent) : null
 
     default:
       return null

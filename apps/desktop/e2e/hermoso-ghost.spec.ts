@@ -16,25 +16,25 @@
  * Prerequisite: see ./hermoso-launch.ts.
  */
 
-import { spawnSync } from 'node:child_process'
 import * as fs from 'node:fs'
-import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { type Browser, chromium, type Page } from '@playwright/test'
+import type { Browser } from '@playwright/test'
 
-import { launchHermoso, say, waitForBackendReady } from './hermoso-launch'
+import {
+  askHermoso,
+  connectToGhost,
+  ghostFolders,
+  killGhosts,
+  launchHermoso,
+  say,
+  waitForBackendReady
+} from './hermoso-launch'
 import { SHIELD_PLAIN, SHIELD_PLAIN_DONE } from './hermoso-mock-model'
 import { expect, test } from './test'
 
 const PORT = 9400 + Math.floor(Math.random() * 400)
 const SECRET = 'ghost-secret-marker-7f3a'
-
-const ghostFolders = () =>
-  fs
-    .readdirSync(os.tmpdir())
-    .filter(name => /^hermoso-ghost-[0-9a-f]{12}$/.test(name))
-    .map(name => path.join(os.tmpdir(), name))
 
 /** Every file under a folder that holds this text (a chat in a database is in its bytes). */
 function filesHolding(dir: string, text: string): string[] {
@@ -66,51 +66,6 @@ function filesHolding(dir: string, text: string): string[] {
   return found
 }
 
-const killGhosts = () =>
-  spawnSync(
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-Command',
-      "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match '--hermoso-ghost' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
-    ],
-    { windowsHide: true }
-  )
-
-async function connectToGhost(): Promise<{ browser: Browser; page: Page }> {
-  let last: unknown = null
-  let seen = ''
-
-  for (let attempt = 0; attempt < 120; attempt++) {
-    try {
-      const browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`)
-
-      // The app's own window is the one that has the desktop bridge; the process may show others first.
-      const pages = browser.contexts().flatMap(context => context.pages())
-
-      seen = pages.map(page => page.url()).join(' | ') || '(no pages)'
-
-      for (const page of pages) {
-        const isApp = await page
-          .evaluate(() => Boolean((window as unknown as { hermesDesktop?: unknown }).hermesDesktop))
-          .catch(() => false)
-
-        if (isApp) {
-          return { browser, page }
-        }
-      }
-
-      await browser.close().catch(() => undefined)
-    } catch (error) {
-      last = error
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 1000))
-  }
-
-  throw new Error(`the ghost window never answered on port ${PORT}: ${String(last)}; pages: ${seen}`)
-}
-
 test.describe('Hermoso Ghost through the real agent', () => {
   test.beforeEach(() => {
     // Two real backends, one after the other.
@@ -133,7 +88,7 @@ test.describe('Hermoso Ghost through the real agent', () => {
       await page.getByRole('button', { name: 'Open a ghost window' }).click()
       await expect(page.getByTestId('ghost-opened')).toBeVisible({ timeout: 30_000 })
 
-      const connected = await connectToGhost()
+      const connected = await connectToGhost(PORT)
 
       ghost = connected.browser
 
@@ -194,7 +149,7 @@ test.describe('Hermoso Ghost through the real agent', () => {
       // ── a second ghost, closed the ordinary way ──
       await page.getByRole('button', { name: 'Open a ghost window' }).click()
 
-      const second = await connectToGhost()
+      const second = await connectToGhost(PORT)
 
       ghost = second.browser
 
@@ -202,6 +157,10 @@ test.describe('Hermoso Ghost through the real agent', () => {
 
       expect(secondFolder).toBeTruthy()
       await waitForBackendReady(second.page)
+      // the aura counted both ghosts opened from this window (a ghost's own counts are deleted with it)
+      expect(
+        ((await askHermoso<any>(page, 'aura.get')) as { breakdown: { count: number; key: string }[] }).breakdown
+      ).toContainEqual(expect.objectContaining({ count: 2, key: 'ghosts' }))
       await second.page.close()
       await expect
         .poll(() => fs.existsSync(secondFolder), { message: 'the folder survived an ordinary close', timeout: 120_000 })

@@ -83,6 +83,9 @@ test.describe('Hermoso Teleport through the real agent', () => {
       expect(mock.toolResults.join('\n')).not.toContain(TOOLS_MISSING)
       expect(mock.toolResults.some(result => result.includes('"ok": true'))).toBe(true)
 
+      // The trip is on the aura: the chip appears in the status bar once there is something to count.
+      await expect(page.getByRole('button', { name: 'Aura: Quiet · 10' })).toBeVisible()
+
       // ── a no ──
       const movesBefore = readState().log.filter(line => line.startsWith('relay set location')).length
 
@@ -94,6 +97,9 @@ test.describe('Hermoso Teleport through the real agent', () => {
       expect(readState().log.filter(line => line.startsWith('relay set location')).length).toBe(movesBefore)
       expect(readState().relay).toBe('country se')
       expect(mock.toolResults.some(result => result.includes('"error": "denied"'))).toBe(true)
+
+      // A trip that was refused is not a trip: the aura is still worth the one that happened.
+      await expect(page.getByRole('button', { name: 'Aura: Quiet · 10' })).toBeVisible()
     } finally {
       await run.cleanup()
     }

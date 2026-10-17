@@ -1,16 +1,18 @@
 /**
- * The Hermoso page: who he is, and every protection he gives, one section each. The shield first, then the guardian,
- * the Time Machine and Teleport, then what the agent is allowed to do without asking and whether its tools are connected.
+ * The Hermoso page: who he is, his aura (for fun), and every protection he gives, one section each. The shield first,
+ * then the guardian, the Time Machine, the ghost and Teleport, then what the agent is allowed to do without asking and
+ * whether its tools are connected.
  */
 
 import { Button, cn, useTheme, useValue } from '@hermes/plugin-sdk'
 import { IconPlugConnected } from '@tabler/icons-react'
 import { type ReactNode, useEffect } from 'react'
 
+import { AuraPanel } from './aura-panel'
 import { GhostPanel } from './ghost-panel'
 import { GuardianPanel } from './guardian-panel'
 import { ShieldPanel } from './shield-panel'
-import { $agent, $allowed, loadAllowed, revokeAllowed } from './store'
+import { $agent, $allowed, $ghost, loadAllowed, revokeAllowed } from './store'
 import { STRINGS } from './strings'
 import { TeleportPanel } from './teleport-panel'
 import { TimeMachinePanel } from './timemachine-panel'
@@ -36,6 +38,17 @@ export function HermosoMark({ className }: { className?: string }) {
 
 function Section({ children }: { children: ReactNode }) {
   return <section className="rounded-lg bg-(--ui-bg-quaternary) p-4">{children}</section>
+}
+
+/** The aura scoreboard. A ghost keeps nothing, so it has none. */
+function AuraSection() {
+  const ghost = useValue($ghost)
+
+  return ghost.ghost ? null : (
+    <Section>
+      <AuraPanel />
+    </Section>
+  )
 }
 
 function AgentTools() {
@@ -98,6 +111,8 @@ export function HermosoPage() {
             <p className="text-sm text-(--ui-text-tertiary)">{STRINGS.brand.motto}</p>
           </div>
         </header>
+
+        <AuraSection />
 
         <Section>
           <ShieldPanel />

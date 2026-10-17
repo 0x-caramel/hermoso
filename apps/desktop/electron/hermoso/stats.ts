@@ -95,6 +95,8 @@ export interface StatsDeps {
   schedule?: (fn: () => void, ms: number) => () => void
   log?: (message: string) => void
   now?: () => number
+  /** Called right after a counter or the journal changed (not when the file is written). */
+  onChange?: () => void
   store: StatsStore
   /** How long after the last change the file is written. */
   writeAfterMs?: number
@@ -141,12 +143,22 @@ export function createStats(deps: StatsDeps) {
     cancel ??= schedule(flush, writeAfterMs)
   }
 
+  // Whoever listens must never be able to break the counting.
+  const changed = (): void => {
+    try {
+      deps.onChange?.()
+    } catch (error) {
+      deps.log?.(`[stats] a listener failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
   return {
     /** Add to a counter. A name that is not a plain word is ignored. */
     bump(name: string, amount = 1): void {
       if (COUNTER.test(name) && Number.isFinite(amount) && amount > 0) {
         data.counters[name] = (data.counters[name] ?? 0) + Math.floor(amount)
         touched()
+        changed()
       }
     },
 
@@ -154,6 +166,7 @@ export function createStats(deps: StatsDeps) {
     event(event: GuardianEvent): void {
       data.recent = [event, ...data.recent].slice(0, MAX_RECENT)
       touched()
+      changed()
     },
 
     flush,
@@ -164,6 +177,7 @@ export function createStats(deps: StatsDeps) {
     reset(): void {
       data = sanitizeStats(null, now())
       touched()
+      changed()
     }
   }
 }

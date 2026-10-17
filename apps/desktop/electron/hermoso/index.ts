@@ -18,6 +18,7 @@ import path from 'node:path'
 import type { MullvadClient } from '../mullvad'
 import type { VpnController } from '../vpn-controller'
 
+import { computeAura } from './aura'
 import { createBridge } from './bridge'
 import { removeBridgeFile, writeBridgeFile } from './bridge-file'
 import { createConsent, createFileConsentStore } from './consent'
@@ -121,6 +122,8 @@ const RADAR_SAMPLE_MS = 10_000
 const FRESH_VERDICT_MS = 2_000
 // A plugin that has not asked for this long is not talking to us any more.
 const AGENT_STALE_MS = 60_000
+// A freeze shorter than this is not a drop worth counting (a status read that failed once, a reconnect that blinked).
+const MIN_FREEZE_MS = 3_000
 
 const text = (value: unknown): null | string => (typeof value === 'string' && value.trim() ? value.trim() : null)
 
@@ -182,6 +185,12 @@ export function createHermoso(deps: HermosoDeps) {
     hold: () => deps.vpn.holdTransition(),
     log,
     onChanged: () => void deps.vpn.refresh().catch(() => {}),
+    // A trip that really happened (the tunnel came up there) is one more for the aura; one that failed is not.
+    onEvent: event => {
+      if (event.type === 'jumped') {
+        stats.bump('teleports')
+      }
+    },
     onState: state => broadcast(EVENT_CHANNEL, { state, type: 'teleport' }),
     sleep: deps.sleep,
     store: createFileTeleportStore(path.join(deps.dataDir, 'hermoso', 'teleport.json'))
@@ -189,7 +198,31 @@ export function createHermoso(deps: HermosoDeps) {
 
   // ── what Hermoso has done for the person, and what the person switched on or off ──
 
-  const stats = createStats({ log, store: createFileStatsStore(path.join(deps.dataDir, 'hermoso', 'stats.json')) })
+  // Aura is arithmetic over the counters, so it is never kept anywhere: it is worked out when it is asked for, and
+  // pushed to the windows whenever the counters change and the result is different.
+  let lastAura = ''
+
+  const auraView = () => {
+    const { counters, since } = stats.get()
+
+    return { ...computeAura(counters), since }
+  }
+
+  const stats = createStats({
+    log,
+    onChange: () => {
+      const aura = auraView()
+      const signature = JSON.stringify(aura)
+
+      if (signature !== lastAura) {
+        lastAura = signature
+        broadcast(EVENT_CHANNEL, { aura, type: 'aura' })
+      }
+    },
+    store: createFileStatsStore(path.join(deps.dataDir, 'hermoso', 'stats.json'))
+  })
+
+  lastAura = JSON.stringify(auraView())
   const settings = createSettings(createFileSettingsStore(path.join(deps.dataDir, 'hermoso', 'settings.json')))
 
   // ── Time Machine: Hermes snapshots the project folder before the agent first changes a file in a turn ──
@@ -238,20 +271,45 @@ export function createHermoso(deps: HermosoDeps) {
 
   let frozenSince: null | number = null
 
+  // A launch with the tunnel still coming up is not a drop: the agent has not even started, so nothing was held.
+  // Only a freeze that follows a calm moment is counted for the aura, and only when it lasted long enough to be one.
+  let wasCalm = false
+
+  /** A freeze is over (or the app is going while one is on): into the counters, if it was a real one. */
+  const endFreeze = (): void => {
+    if (frozenSince === null) {
+      return
+    }
+
+    const lasted = Date.now() - frozenSince
+
+    frozenSince = null
+
+    if (lasted >= MIN_FREEZE_MS) {
+      stats.bump('freezes')
+      stats.bump('frozenSeconds', Math.round(lasted / 1000))
+    }
+  }
+
   const shield = createShield({
     onChange: state => {
-      if (state.frozen && frozenSince === null) {
+      log(
+        `[shield] ${state.frozen ? 'frozen' : 'calm'} (tunnel ${state.tunnel}, VPN ${state.required ? 'required' : 'not required'})`
+      )
+
+      if (!state.frozen) {
+        wasCalm = true
+        endFreeze()
+      } else if (frozenSince === null && wasCalm) {
         frozenSince = Date.now()
-        stats.bump('freezes')
-      } else if (!state.frozen && frozenSince !== null) {
-        stats.bump('frozenSeconds', Math.round((Date.now() - frozenSince) / 1000))
-        frozenSince = null
       }
 
       broadcast(EVENT_CHANNEL, { state, type: 'shield' })
     },
     vpn: () => deps.vpn.getState()
   })
+
+  wasCalm = !shield.getState().frozen
 
   let lastLook = 0
 
@@ -440,6 +498,7 @@ export function createHermoso(deps: HermosoDeps) {
 
   const methods: Record<string, (params: unknown) => Promise<unknown> | unknown> = {
     'agent.state': () => agent,
+    'aura.get': () => auraView(),
     'consent.ack': params => consent.ack(String(asRecord(params).id)),
     'consent.always': () => consent.always(),
     'consent.answer': params => consent.answer(String(asRecord(params).id), asRecord(params).answer),
@@ -541,6 +600,7 @@ export function createHermoso(deps: HermosoDeps) {
   return {
     /** On the way out: bring the machine home, but never hold the quit for more than a few seconds. */
     async beforeQuit(): Promise<void> {
+      endFreeze()
       stats.flush()
 
       if (teleport.needsQuitWait()) {
@@ -570,6 +630,7 @@ export function createHermoso(deps: HermosoDeps) {
 
     async dispose(): Promise<void> {
       teleport.dispose()
+      endFreeze()
       stats.flush()
       timers.forEach(timer => clearInterval(timer))
       timers = []
