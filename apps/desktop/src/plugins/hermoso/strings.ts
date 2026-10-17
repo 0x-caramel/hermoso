@@ -49,6 +49,36 @@ export const STRINGS = {
       `${t.asked} asked · ${t.allowed} allowed · ${t.denied} denied · ${t.blocked} refused outright`
   },
   nav: 'Hermoso',
+  timeMachine: {
+    blurb:
+      'Just before the agent first changes a file in a turn, Hermes saves a snapshot of the project folder. Here you can see what it changed, and put the project (and the chat) back.',
+    cancel: 'Cancel',
+    chatRewound: 'The chat went back to that point too.',
+    confirm: (when: string) =>
+      `Put the project back to how it was at ${when}? Everything the agent changed after that is undone, and the chat goes back to that point.`,
+    failed: (reason: string) => `It was not rewound: ${reason}`,
+    failedPlain: 'It was not rewound.',
+    keptEdits: (n: number) => `${n} file${n === 1 ? '' : 's'} you changed yourself ${n === 1 ? 'was' : 'were'} kept.`,
+    limits:
+      'Snapshots are Hermes’ own, kept outside your project. Folders that are too broad (your whole home) or hold too many files are not snapshotted, and files over 10 MB are left out.',
+    looking: 'Looking…',
+    noAnswer: 'Hermes did not answer. Try again in a moment.',
+    noChanges: 'Nothing has changed since this snapshot.',
+    noDiff: 'Hermes could not say what changed.',
+    notOnForThisChat: 'Snapshots were not on when this chat started. They will be for the next one.',
+    nothingYet:
+      'No snapshots yet. One is taken just before the agent first changes a file in a turn, in a folder it can snapshot.',
+    openAChat: 'Open a chat in a project folder to see its snapshots.',
+    restartNote: 'This takes effect the next time Hermoso starts.',
+    rewind: 'Rewind',
+    rewindHere: 'Rewind to here',
+    rewinding: 'Rewinding…',
+    rewound: (n: number) => `Rewound: ${n} file${n === 1 ? '' : 's'} put back.`,
+    seeChanges: 'See changes',
+    switchDescription: 'Applies from the next start of Hermoso. Nothing in your own settings is changed.',
+    switchTitle: 'Snapshot before the agent changes files',
+    title: 'Time Machine'
+  },
   palette: {
     open: 'Hermoso: open',
     teleport: 'Hermoso: teleport…'

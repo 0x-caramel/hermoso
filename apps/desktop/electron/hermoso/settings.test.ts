@@ -22,32 +22,39 @@ const temp = () => {
   return dir
 }
 
-describe('the settings', () => {
-  it('start from the defaults: the guardian is on', () => {
-    expect(DEFAULT_SETTINGS).toEqual({ guardian: true })
+const ON = { guardian: true, timeMachine: true }
 
-    for (const raw of [null, undefined, 'x', 7, [], {}, { guardian: 'no' }, { guardian: 0 }]) {
-      expect(sanitizeSettings(raw), JSON.stringify(raw)).toEqual({ guardian: true })
+describe('the settings', () => {
+  it('start from the defaults: the guardian and the time machine are on', () => {
+    expect(DEFAULT_SETTINGS).toEqual(ON)
+
+    for (const raw of [null, undefined, 'x', 7, [], {}, { guardian: 'no' }, { guardian: 0, timeMachine: 'off' }]) {
+      expect(sanitizeSettings(raw), JSON.stringify(raw)).toEqual(ON)
     }
 
-    expect(sanitizeSettings({ guardian: false })).toEqual({ guardian: false })
+    expect(sanitizeSettings({ guardian: false })).toEqual({ ...ON, guardian: false })
+    expect(sanitizeSettings({ timeMachine: false })).toEqual({ ...ON, timeMachine: false })
   })
 
   it('keep what the person chose, in a file, across launches', () => {
     const file = path.join(temp(), 'hermoso', 'settings.json')
 
-    expect(createSettings(createFileSettingsStore(file)).set({ guardian: false })).toEqual({ guardian: false })
-    expect(createSettings(createFileSettingsStore(file)).get()).toEqual({ guardian: false })
-    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ guardian: false, version: 1 })
+    expect(createSettings(createFileSettingsStore(file)).set({ guardian: false })).toEqual({ ...ON, guardian: false })
+    expect(createSettings(createFileSettingsStore(file)).set({ timeMachine: false })).toEqual({
+      guardian: false,
+      timeMachine: false
+    })
+    expect(createSettings(createFileSettingsStore(file)).get()).toEqual({ guardian: false, timeMachine: false })
+    expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toEqual({ guardian: false, timeMachine: false, version: 1 })
   })
 
   it('ignore keys they do not know and values of the wrong kind', () => {
     const settings = createSettings({ read: () => null, write: () => {} })
 
-    expect(settings.set({ guardian: 'off', other: true })).toEqual({ guardian: true })
-    expect(settings.set(null)).toEqual({ guardian: true })
-    expect(settings.set({ guardian: false })).toEqual({ guardian: false })
-    expect(settings.set({ nonsense: 1 })).toEqual({ guardian: false })
+    expect(settings.set({ guardian: 'off', other: true, timeMachine: 0 })).toEqual(ON)
+    expect(settings.set(null)).toEqual(ON)
+    expect(settings.set({ guardian: false })).toEqual({ ...ON, guardian: false })
+    expect(settings.set({ nonsense: 1 })).toEqual({ ...ON, guardian: false })
   })
 
   it('hand out copies', () => {
@@ -61,6 +68,6 @@ describe('the settings', () => {
     const file = path.join(temp(), 'settings.json')
 
     fs.writeFileSync(file, '{ not json')
-    expect(createSettings(createFileSettingsStore(file)).get()).toEqual({ guardian: true })
+    expect(createSettings(createFileSettingsStore(file)).get()).toEqual(ON)
   })
 })

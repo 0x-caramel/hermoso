@@ -12,6 +12,7 @@
  *   E2E_SHIELD_WRITE <path>        write_file(path) → a sentence that says whether the file was written or refused
  *   E2E_SHIELD_WRITE_SLOW <path>   the same, but the model takes a few seconds to decide (time to drop the tunnel)
  *   E2E_GUARD_WRITE <path>         write_file(path) → a sentence that says whether the guardian let it through
+ *   E2E_TM_WRITE <path>            write_file(path) in the session's project folder → a closing sentence
  *
  * Hermes defers a plugin's tools behind `tool_search` / `tool_call` and lists them by name in the `tool_search`
  * description. The mock behaves like a model that reads that list: it calls the tool through `tool_call` (or
@@ -39,6 +40,8 @@ export const SHIELD_WRITE_SLOW = 'E2E_SHIELD_WRITE_SLOW'
 export const SHIELD_PLAIN_DONE = 'The shield let this question through.'
 export const SHIELD_WRITE_DONE = 'The file was written.'
 export const SHIELD_REFUSED_DONE = 'The tool was refused because the VPN was down.'
+export const TM_WRITE = 'E2E_TM_WRITE'
+export const TM_DONE = 'The time machine file was written.'
 export const GUARD_WRITE = 'E2E_GUARD_WRITE'
 export const GUARD_WRITTEN_DONE = 'The guarded file was written.'
 export const GUARD_DENIED_DONE = 'The user said no to the guarded file.'
@@ -87,6 +90,10 @@ const guarding = (context: Context): Turn =>
 
 const SCRIPTS: Record<string, (context: Context) => Turn> = {
   [GUARD_WRITE]: guarding,
+  [TM_WRITE]: context =>
+    context.results.length === 0
+      ? { tool: { args: { content: 'agent', path: after(context.prompt, TM_WRITE) }, name: 'write_file' } }
+      : { text: TM_DONE },
   [SHIELD_PLAIN]: () => ({ text: SHIELD_PLAIN_DONE }),
   [SHIELD_WRITE_SLOW]: writing(SHIELD_WRITE_SLOW, SLOW_MS),
   [SHIELD_WRITE]: writing(SHIELD_WRITE, 0),

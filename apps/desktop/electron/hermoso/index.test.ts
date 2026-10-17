@@ -59,10 +59,18 @@ function fakeWindow() {
 
 function make(
   daemonOptions = {},
-  extra: { dialog?: any; exec?: any; interfaces?: any; source?: string; windows?: HermosoWindow[] } = {}
+  extra: {
+    dataDir?: string
+    dialog?: any
+    env?: NodeJS.ProcessEnv
+    exec?: any
+    interfaces?: any
+    source?: string
+    windows?: HermosoWindow[]
+  } = {}
 ) {
   const daemon = fakeDaemon(daemonOptions)
-  const dataDir = temp()
+  const dataDir = extra.dataDir ?? temp()
   const home = temp()
   const { sent, win } = fakeWindow()
 
@@ -86,6 +94,7 @@ function make(
   const hermoso = createHermoso({
     dataDir,
     dialog: extra.dialog ?? { showMessageBox },
+    env: extra.env ?? {},
     exec: extra.exec,
     interfaces: extra.interfaces,
     log,
@@ -743,6 +752,7 @@ describe('the guardian', () => {
     expect(state.enabled).toBe(false)
     expect(JSON.parse(fs.readFileSync(path.join(h.dataDir, 'hermoso', 'settings.json'), 'utf8'))).toEqual({
       guardian: false,
+      timeMachine: true,
       version: 1
     })
 
@@ -817,5 +827,55 @@ describe('what the shield did, counted', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('the time machine', () => {
+  it('asks Hermes to snapshot before the agent first changes a file in a turn, by the one variable the backend reads', async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const h = make({}, { env })
+
+    expect(env.HERMES_TUI_CHECKPOINTS).toBe('1')
+    expect(await h.hermoso.call('timemachine.state')).toEqual({ active: true, enabled: true })
+  })
+
+  it('leaves a value the person set themselves alone', async () => {
+    const env: NodeJS.ProcessEnv = { HERMES_TUI_CHECKPOINTS: '0' }
+    const h = make({}, { env })
+
+    expect(env.HERMES_TUI_CHECKPOINTS).toBe('0')
+    expect(await h.hermoso.call('timemachine.state')).toEqual({ active: false, enabled: true })
+  })
+
+  it('does nothing when the person switched it off', async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const dataDir = temp()
+
+    fs.mkdirSync(path.join(dataDir, 'hermoso'), { recursive: true })
+    fs.writeFileSync(path.join(dataDir, 'hermoso', 'settings.json'), JSON.stringify({ timeMachine: false, version: 1 }))
+
+    const h = make({}, { dataDir, env })
+
+    expect(env.HERMES_TUI_CHECKPOINTS).toBeUndefined()
+    expect(await h.hermoso.call('timemachine.state')).toEqual({ active: false, enabled: false })
+  })
+
+  it('the switch is kept in a file, and says that it takes effect at the next start (what runs now does not change)', async () => {
+    const env: NodeJS.ProcessEnv = {}
+    const h = make({}, { env })
+
+    expect(await h.hermoso.call('timemachine.enable', { on: false })).toEqual({ active: true, enabled: false })
+    expect(JSON.parse(fs.readFileSync(path.join(h.dataDir, 'hermoso', 'settings.json'), 'utf8'))).toMatchObject({
+      timeMachine: false
+    })
+    expect(await h.hermoso.call('timemachine.enable', { on: 'yes' })).toEqual({ active: true, enabled: false })
+    expect(await h.hermoso.call('timemachine.enable', { on: true })).toEqual({ active: true, enabled: true })
+  })
+
+  it('counts a rewind', async () => {
+    const h = make()
+
+    expect(await h.hermoso.call('timemachine.rewound')).toBe(true)
+    expect(((await h.hermoso.call('stats.get')) as any).counters).toEqual({ rewinds: 1 })
   })
 })

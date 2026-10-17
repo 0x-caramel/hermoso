@@ -101,6 +101,44 @@ export const CALM_GUARDIAN: GuardianView = {
   totals: { allowed: 0, asked: 0, blocked: 0, denied: 0 }
 }
 
+/** The Time Machine as main reports it: whether the person wants snapshots, and whether this run has them. */
+export interface TimeMachineView {
+  /** Hermes was started asking for snapshots (the choice is read once, when the backend starts). */
+  active: boolean
+  enabled: boolean
+}
+
+export const CALM_TIME_MACHINE: TimeMachineView = { active: false, enabled: true }
+
+/** One snapshot of the project folder, as Hermes lists them (newest first). */
+export interface Snapshot {
+  hash: string
+  message: string
+  timestamp: string
+}
+
+export interface SnapshotList {
+  checkpoints: Snapshot[]
+  enabled: boolean
+}
+
+export interface SnapshotDiff {
+  diff: string
+  stat: string
+}
+
+export interface RestoreResult {
+  error?: string
+  failed_deletes?: string[]
+  /** How many chat messages went with the rewind. */
+  history_removed?: number
+  restore?: string[]
+  skipped_oversize?: string[]
+  /** Files the person changed by hand after the snapshot: kept, not overwritten. */
+  skipped_user_edits?: string[]
+  success?: boolean
+}
+
 export type Route = 'lan' | 'loopback' | 'outside' | 'tunnel'
 
 export interface RadarConnection {

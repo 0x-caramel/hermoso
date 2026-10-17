@@ -1,6 +1,6 @@
 /**
- * The Hermoso page: who he is, and every protection he gives, one section each. The shield first, then the guardian
- * and Teleport, then what the agent is allowed to do without asking and whether its tools are connected.
+ * The Hermoso page: who he is, and every protection he gives, one section each. The shield first, then the guardian,
+ * the Time Machine and Teleport, then what the agent is allowed to do without asking and whether its tools are connected.
  */
 
 import { Button, cn, useTheme, useValue } from '@hermes/plugin-sdk'
@@ -12,6 +12,7 @@ import { ShieldPanel } from './shield-panel'
 import { $agent, $allowed, loadAllowed, revokeAllowed } from './store'
 import { STRINGS } from './strings'
 import { TeleportPanel } from './teleport-panel'
+import { TimeMachinePanel } from './timemachine-panel'
 
 const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
 
@@ -103,6 +104,10 @@ export function HermosoPage() {
 
         <Section>
           <GuardianPanel />
+        </Section>
+
+        <Section>
+          <TimeMachinePanel />
         </Section>
 
         <Section>

@@ -9,9 +9,11 @@ import path from 'node:path'
 export interface HermosoSettings {
   /** Review risky commands and ask before they run. A "block" rule is enforced whatever this says. */
   guardian: boolean
+  /** Let Hermes snapshot the project folder before the agent first changes a file in a turn (read at launch). */
+  timeMachine: boolean
 }
 
-export const DEFAULT_SETTINGS: HermosoSettings = { guardian: true }
+export const DEFAULT_SETTINGS: HermosoSettings = { guardian: true, timeMachine: true }
 
 export interface SettingsStore {
   read: () => unknown
@@ -21,7 +23,10 @@ export interface SettingsStore {
 export function sanitizeSettings(raw: unknown): HermosoSettings {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
 
-  return { guardian: typeof source.guardian === 'boolean' ? source.guardian : DEFAULT_SETTINGS.guardian }
+  return {
+    guardian: typeof source.guardian === 'boolean' ? source.guardian : DEFAULT_SETTINGS.guardian,
+    timeMachine: typeof source.timeMachine === 'boolean' ? source.timeMachine : DEFAULT_SETTINGS.timeMachine
+  }
 }
 
 export function createFileSettingsStore(file: string): SettingsStore {
@@ -57,7 +62,8 @@ export function createSettings(store: SettingsStore) {
 
       current = sanitizeSettings({
         ...current,
-        ...(typeof source.guardian === 'boolean' ? { guardian: source.guardian } : {})
+        ...(typeof source.guardian === 'boolean' ? { guardian: source.guardian } : {}),
+        ...(typeof source.timeMachine === 'boolean' ? { timeMachine: source.timeMachine } : {})
       })
       store.write({ ...current, version: 1 })
 

@@ -4,13 +4,14 @@
  * the person's yes goes to main as it was given, never guessed.
  */
 
-import { atom } from '@hermes/plugin-sdk'
+import { atom, host } from '@hermes/plugin-sdk'
 
 import {
   type AgentLink,
   type AllowedItem,
   CALM_GUARDIAN,
   CALM_SHIELD,
+  CALM_TIME_MACHINE,
   type ConsentAnswer,
   type ConsentPrompt,
   type Destination,
@@ -22,13 +23,20 @@ import {
   onHermosoEvent,
   type RadarView,
   readEvent,
+  type RestoreResult,
   type ShieldState,
+  type SnapshotDiff,
+  type SnapshotList,
   type TeleportResult,
-  type TeleportState
+  type TeleportState,
+  type TimeMachineView
 } from './api'
 
 export const $teleport = atom<TeleportState>(IDLE_TELEPORT)
 export const $destinations = atom<Destination[]>([])
+
+/** The Time Machine: whether the person wants snapshots, and whether this run of Hermes has them. */
+export const $timeMachine = atom<TimeMachineView>(CALM_TIME_MACHINE)
 
 /** The guardian: switched on or off, what it asked and refused, its last decisions. */
 export const $guardian = atom<GuardianView>(CALM_GUARDIAN)
@@ -152,6 +160,7 @@ export function startHermoso(): () => void {
   void hermosoCall<AgentLink>('agent.state').then(link => link && $agent.set(link))
   void hermosoCall<ShieldState>('shield.state').then(state => state && $shield.set(state))
   void loadGuardian()
+  void loadTimeMachine()
   void loadAllowed()
 
   const vpn = vpnBridge()
@@ -291,5 +300,62 @@ export async function setGuardianOn(on: boolean): Promise<void> {
 
   if (view && typeof view.enabled === 'boolean' && Array.isArray(view.events)) {
     $guardian.set(view)
+  }
+}
+
+// ── the Time Machine ──
+
+export async function loadTimeMachine(): Promise<void> {
+  const view = await hermosoCall<TimeMachineView>('timemachine.state')
+
+  if (view && typeof view.active === 'boolean' && typeof view.enabled === 'boolean') {
+    $timeMachine.set(view)
+  }
+}
+
+/** Switch the snapshots on or off for the next start of Hermes. What main says afterwards is what is shown. */
+export async function setTimeMachineOn(on: boolean): Promise<void> {
+  const view = await hermosoCall<TimeMachineView>('timemachine.enable', { on })
+
+  if (view && typeof view.active === 'boolean' && typeof view.enabled === 'boolean') {
+    $timeMachine.set(view)
+  }
+}
+
+/** Main counts a rewind (for the page's tally); nothing depends on the answer. */
+export async function noteRewind(): Promise<void> {
+  await hermosoCall('timemachine.rewound')
+}
+
+/** The snapshots of a chat's project folder, from Hermes through the gateway; null when it did not answer. */
+export async function listSnapshots(sessionId: string): Promise<null | SnapshotList> {
+  try {
+    const answer = await host.request<SnapshotList>('rollback.list', { session_id: sessionId })
+
+    return answer && Array.isArray(answer.checkpoints) ? answer : null
+  } catch {
+    return null
+  }
+}
+
+/** What changed in the project since a snapshot; null when Hermes could not say. */
+export async function diffSnapshot(sessionId: string, hash: string): Promise<null | SnapshotDiff> {
+  try {
+    const answer = await host.request<SnapshotDiff>('rollback.diff', { hash, session_id: sessionId })
+
+    return answer && typeof answer.diff === 'string' ? answer : null
+  } catch {
+    return null
+  }
+}
+
+/** Put the project (and the chat) back to a snapshot. A refusal (the agent is working, say) comes back as a result. */
+export async function restoreSnapshot(sessionId: string, hash: string): Promise<RestoreResult> {
+  try {
+    return (
+      (await host.request<RestoreResult>('rollback.restore', { hash, session_id: sessionId })) ?? { success: false }
+    )
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error), success: false }
   }
 }

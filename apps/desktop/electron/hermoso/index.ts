@@ -53,6 +53,8 @@ export interface HermosoDeps {
   appVersion?: string
   /** The app's data folder: Hermoso keeps its own files under `<dataDir>/hermoso`. */
   dataDir: string
+  /** The environment the Hermes backends inherit (the app's own, unless a test passes one). */
+  env?: NodeJS.ProcessEnv
   /** For the native consent dialog, used only when no window shows a request in time. */
   dialog: NativeDialog
   /** Runs `netstat` and the process list for the radar. */
@@ -162,6 +164,19 @@ export function createHermoso(deps: HermosoDeps) {
 
   const stats = createStats({ log, store: createFileStatsStore(path.join(deps.dataDir, 'hermoso', 'stats.json')) })
   const settings = createSettings(createFileSettingsStore(path.join(deps.dataDir, 'hermoso', 'settings.json')))
+
+  // ── Time Machine: Hermes snapshots the project folder before the agent first changes a file in a turn ──
+
+  // The desktop's backend turns that on from this variable (read once, when the backend starts), not from the
+  // person's config file, so nothing of theirs is edited. A value the person set themselves is left alone.
+  const env = deps.env ?? process.env
+
+  if (settings.get().timeMachine && env.HERMES_TUI_CHECKPOINTS === undefined) {
+    env.HERMES_TUI_CHECKPOINTS = '1'
+  }
+
+  const timeMachineActive = /^(?:1|true|yes|on)$/i.test(String(env.HERMES_TUI_CHECKPOINTS ?? '').trim())
+  const timeMachineView = () => ({ active: timeMachineActive, enabled: settings.get().timeMachine })
 
   // ── shield: the agent stands still while the VPN is required and the tunnel is not up ──
 
@@ -419,7 +434,18 @@ export function createHermoso(deps: HermosoDeps) {
     'teleport.destinations': () => teleport.destinations(),
     'teleport.home': () => teleport.home('user'),
     'teleport.jump': params => teleport.jump(parseJump(params, 'user')),
-    'teleport.state': () => teleport.getState()
+    'teleport.state': () => teleport.getState(),
+    'timemachine.enable': params => {
+      settings.set({ timeMachine: asRecord(params).on === true })
+
+      return timeMachineView()
+    },
+    'timemachine.rewound': () => {
+      stats.bump('rewinds')
+
+      return true
+    },
+    'timemachine.state': () => timeMachineView()
   }
 
   return {
