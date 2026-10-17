@@ -95,8 +95,9 @@ holds the agent's backend until the tunnel is up.
   </tr>
 </table>
 
-<sub>The screenshots come from Hermoso's end-to-end test environment: the real app and a real Hermes backend, with a
-scripted model and a scripted `mullvad` command-line tool so that every state can be reproduced.</sub>
+<sub>These screenshots come from Hermoso's end-to-end test environment: the real app and a real Hermes backend, with a
+scripted model and a scripted `mullvad` command-line tool so that every state can be reproduced. The radar picture in
+[Verification](#verification) is from a real run against the real Mullvad.</sub>
 
 ## Using him
 
@@ -209,8 +210,15 @@ Every behaviour above has a test that fails if it stops being true:
   `mullvad` tool that records what actually moved. Examples: nothing moves until you say yes; a refused file is never
   written; a held agent sends nothing until the tunnel is back; a rewind restores and removes the right files; a ghost's
   chat is found only in the ghost's folder and nowhere in the main window's home.
-- **Real runs against real Mullvad** with the packaged `.exe` in a sandbox profile: the freeze, the radar and the report,
-  with the real tunnel going down and up.
+- **Real runs against real Mullvad** with the packaged `.exe` in a sandbox profile: the freeze, the radar, the proof
+  report and the *Always require VPN* switch, with the real tunnel going down and up (and the person's own Mullvad
+  put back exactly as it was found).
+
+<p align="center">
+  <img src="../docs/hermoso/screenshots/shield-radar.png" width="440" alt="The Shield's radar in a real run: 33 connections seen, none outside the tunnel">
+  <br><sub>The Shield's radar in a real run against Mullvad: every connection of the app is either through the tunnel
+  or on this computer.</sub>
+</p>
 
 ```bash
 cd apps/desktop
