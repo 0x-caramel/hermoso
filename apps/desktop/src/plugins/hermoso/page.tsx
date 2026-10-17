@@ -1,12 +1,13 @@
 /**
- * The Hermoso page: who he is, and every protection he gives, one section each. The shield first, then Teleport,
- * then what the agent is allowed to do without asking and whether its tools are connected.
+ * The Hermoso page: who he is, and every protection he gives, one section each. The shield first, then the guardian
+ * and Teleport, then what the agent is allowed to do without asking and whether its tools are connected.
  */
 
 import { Button, cn, useTheme, useValue } from '@hermes/plugin-sdk'
 import { IconPlugConnected } from '@tabler/icons-react'
 import { type ReactNode, useEffect } from 'react'
 
+import { GuardianPanel } from './guardian-panel'
 import { ShieldPanel } from './shield-panel'
 import { $agent, $allowed, loadAllowed, revokeAllowed } from './store'
 import { STRINGS } from './strings'
@@ -98,6 +99,10 @@ export function HermosoPage() {
 
         <Section>
           <ShieldPanel />
+        </Section>
+
+        <Section>
+          <GuardianPanel />
         </Section>
 
         <Section>

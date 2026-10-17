@@ -44,6 +44,8 @@ export interface ConsentPrompt {
   allowKey: null | string
   allowLabel: null | string
   askedAt: number
+  /** What exactly is about to happen, shown as it is (a command, a path). */
+  code?: null | string
   id: string
   kind: string
   lines: string[]
@@ -73,6 +75,30 @@ export interface ShieldState {
   since: null | number
   tunnel: string
   updatedAt: number
+}
+
+export type GuardianDecision = 'allowed' | 'always' | 'blocked' | 'denied' | 'remembered' | 'timeout'
+
+export interface GuardianEvent {
+  at: number
+  decision: GuardianDecision
+  detail: string
+  rule: string
+  title: string
+  tool: string
+}
+
+/** The guardian as main reports it: switched on or off, its last decisions, and how many of each kind. */
+export interface GuardianView {
+  enabled: boolean
+  events: GuardianEvent[]
+  totals: { allowed: number; asked: number; blocked: number; denied: number }
+}
+
+export const CALM_GUARDIAN: GuardianView = {
+  enabled: true,
+  events: [],
+  totals: { allowed: 0, asked: 0, blocked: 0, denied: 0 }
 }
 
 export type Route = 'lan' | 'loopback' | 'outside' | 'tunnel'
@@ -152,6 +178,7 @@ export function onHermosoEvent(callback: (payload: unknown) => void): () => void
 
 type HermosoEvent =
   | { agent: AgentLink; type: 'agent' }
+  | { event: GuardianEvent; type: 'guardian' }
   | { id: string; type: 'consent-closed' }
   | { prompt: ConsentPrompt; type: 'consent' }
   | { state: ShieldState; type: 'shield' }
@@ -160,6 +187,7 @@ type HermosoEvent =
 export function readEvent(payload: unknown): HermosoEvent | null {
   const event = payload as {
     agent?: unknown
+    event?: unknown
     id?: unknown
     prompt?: unknown
     state?: { phase?: unknown }
@@ -172,6 +200,11 @@ export function readEvent(payload: unknown): HermosoEvent | null {
 
     case 'consent':
       return event.prompt && typeof (event.prompt as { id?: unknown }).id === 'string' ? (event as HermosoEvent) : null
+
+    case 'guardian':
+      return event.event && typeof (event.event as { rule?: unknown }).rule === 'string'
+        ? (event as HermosoEvent)
+        : null
 
     case 'shield':
       return event.state && typeof (event.state as { frozen?: unknown }).frozen === 'boolean'

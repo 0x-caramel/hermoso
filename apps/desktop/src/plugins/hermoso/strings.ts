@@ -11,8 +11,8 @@ export const STRINGS = {
     title: 'Agent tools'
   },
   allowed: {
-    empty: 'Nothing yet. When you choose “Always allow” for a country, it is listed here.',
-    hint: 'The agent may teleport to these countries without asking you.',
+    empty: 'Nothing yet. When you choose “Always allow”, it is listed here.',
+    hint: 'The agent may do these without asking you.',
     remove: 'Ask again',
     title: 'Allowed without asking'
   },
@@ -25,6 +25,28 @@ export const STRINGS = {
     deny: 'Deny',
     description: 'Hermoso is asking whether the agent may do this.',
     once: 'Allow once'
+  },
+  guardian: {
+    blurb: 'Before the agent does something that cannot be undone, Hermoso asks you, in this window, in plain words.',
+    decisions: {
+      allowed: 'Allowed once',
+      always: 'Always allowed',
+      blocked: 'Refused',
+      denied: 'Denied',
+      remembered: 'Allowed (remembered)',
+      timeout: 'No answer'
+    } as Record<string, string>,
+    limits:
+      'The guardian reads what the agent is about to run or write and recognises the risky kinds. It is a net with holes, not a sandbox: it catches honest mistakes and obvious attacks, and a determined program can find a way round a pattern.',
+    nothingYet: 'Nothing risky has been tried yet.',
+    offNote:
+      'Even switched off, Hermoso never lets the agent wipe a disk or edit Hermoso’s own files. Everything else goes through without asking.',
+    switchDescription:
+      'Deleting folders, rewriting git history, running what was downloaded, reading keys, switching the VPN off, installing software, writing where programs start by themselves.',
+    switchTitle: 'Review risky commands',
+    title: 'Guardian',
+    totals: (t: { allowed: number; asked: number; blocked: number; denied: number }) =>
+      `${t.asked} asked · ${t.allowed} allowed · ${t.denied} denied · ${t.blocked} refused outright`
   },
   nav: 'Hermoso',
   palette: {

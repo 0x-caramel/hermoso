@@ -9,10 +9,12 @@ import { atom } from '@hermes/plugin-sdk'
 import {
   type AgentLink,
   type AllowedItem,
+  CALM_GUARDIAN,
   CALM_SHIELD,
   type ConsentAnswer,
   type ConsentPrompt,
   type Destination,
+  type GuardianView,
   hermosoAvailable,
   hermosoCall,
   IDLE_TELEPORT,
@@ -27,6 +29,9 @@ import {
 
 export const $teleport = atom<TeleportState>(IDLE_TELEPORT)
 export const $destinations = atom<Destination[]>([])
+
+/** The guardian: switched on or off, what it asked and refused, its last decisions. */
+export const $guardian = atom<GuardianView>(CALM_GUARDIAN)
 
 /** The shield's verdict: is the agent standing still because the VPN tunnel is down? */
 export const $shield = atom<ShieldState>(CALM_SHIELD)
@@ -115,6 +120,11 @@ export function startHermoso(): () => void {
 
           break
 
+        case 'guardian':
+          void loadGuardian()
+
+          break
+
         case 'consent-closed':
           $consent.set($consent.get().filter(entry => entry.id !== event.id))
           void loadAllowed()
@@ -141,6 +151,7 @@ export function startHermoso(): () => void {
   void hermosoCall<ConsentPrompt[]>('consent.pending').then(list => list?.forEach(addPrompt))
   void hermosoCall<AgentLink>('agent.state').then(link => link && $agent.set(link))
   void hermosoCall<ShieldState>('shield.state').then(state => state && $shield.set(state))
+  void loadGuardian()
   void loadAllowed()
 
   const vpn = vpnBridge()
@@ -262,4 +273,23 @@ export async function resetRadar(): Promise<void> {
   await hermosoCall('shield.reset')
   $radar.set(null)
   await lookAtRadar()
+}
+
+// ── the guardian ──
+
+export async function loadGuardian(): Promise<void> {
+  const view = await hermosoCall<GuardianView>('guardian.state')
+
+  if (view && typeof view.enabled === 'boolean' && Array.isArray(view.events)) {
+    $guardian.set(view)
+  }
+}
+
+/** Switch the review of risky commands on or off. What main says afterwards is what is shown. */
+export async function setGuardianOn(on: boolean): Promise<void> {
+  const view = await hermosoCall<GuardianView>('guardian.enable', { on })
+
+  if (view && typeof view.enabled === 'boolean' && Array.isArray(view.events)) {
+    $guardian.set(view)
+  }
 }

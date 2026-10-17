@@ -25,7 +25,7 @@ import { TeleportChip } from './teleport-chip'
 const PATH = '/hermoso'
 
 const plugin: HermesPlugin = {
-  description: 'The shield, Teleport and the protections that ride along with the agent.',
+  description: 'The shield, the guardian, Teleport and the protections that ride along with the agent.',
   id: 'hermoso',
   name: 'Hermoso',
   register(ctx) {
@@ -61,7 +61,7 @@ const plugin: HermesPlugin = {
         area: PALETTE_AREA,
         data: {
           id: 'hermoso.open',
-          keywords: ['hermoso', 'protect', 'shield', 'teleport', 'vpn'],
+          keywords: ['hermoso', 'protect', 'shield', 'guardian', 'teleport', 'vpn'],
           label: STRINGS.palette.open,
           run: () => host.navigate(PATH)
         } satisfies PaletteContribution,

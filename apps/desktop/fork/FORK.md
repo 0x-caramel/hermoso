@@ -56,6 +56,19 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   Known limits, all written where the person reads them: a Stop pressed during a freeze lets Hermes send the one
   request it was holding (and cancel it), Hermes' own helper calls (titles, compression) are not held, the radar
   samples every few seconds and reads TCP only.
+- **Guardian** (`guardian_rules.py`, `guardian.py`, `guardian-rules.json`; app side `guardian.ts`, `stats.ts`,
+  `settings.ts`): a person stands between the agent and the few things that cannot be undone. The plugin recognises a
+  risky tool call (deleting a folder, rewriting git history, running what was downloaded, reading keys, sending files
+  away, changing the computer's set-up, switching the VPN off, installing software, writing where programs start by
+  themselves, into system folders, the SSH folder or the agent's own settings) in a `tool_execution` middleware (a hook
+  would be cut off after 30 s; a middleware that raises is skipped by Hermes, so a refusal is always a returned value)
+  and asks the app, which asks the person in its own window: allow once, always allow this kind, deny; no answer is a
+  no. The words come from one table shared by both halves (`guardian-rules.json`), never from the request, so the agent
+  can name a rule but not choose what the person is told. A "block" rule (wiping a disk, editing Hermoso's own files)
+  is refused with no question, switched on or off. The rules are text patterns: a net with holes, not a sandbox, with a
+  test table of what must be caught AND what everyday commands must not be. With no app to ask the plugin does
+  nothing; an app that stops answering after it was there means the risky action is refused. `stats.json` keeps
+  counters and the last decisions (also the memory behind Aura), `settings.json` what the person switched.
 - **Tool search**: Hermes defers a plugin's tools behind `tool_search` / `tool_describe` / `tool_call` and lists each
   by the first sentence of its description, clipped at 60 characters. Keep that sentence short and plain (a test
   keeps it). A `tool_call` is unwrapped before the hooks run, so `pre_tool_call` sees the real tool name.
@@ -77,7 +90,7 @@ Three parts that only talk through narrow doors, so an upstream update has littl
   connects) and `holdTransition` (a planned reconnect is not shown as a dropped VPN).
 
 Hooks into upstream files are listed in `hooks.json` and checked by `sync.mjs`. Tests: `npx vitest run electron/hermoso
-src/plugins/hermoso`, `python -B fork/plugin-tests/test_hermoso_plugin.py`, and `hermes plugins doctor
+src/plugins/hermoso`, `python -B fork/plugin-tests/test_hermoso_plugin.py`, `python -B fork/plugin-tests/test_guardian_rules.py`, and `hermes plugins doctor
 apps/desktop/assets/hermoso-plugin` (Hermes' own loader: it must say `registrations: 4 tool(s), 1 hook(s)`).
 End to end, with a scripted model and a scripted Mullvad: `npx playwright test e2e/hermoso-teleport.spec.ts
 e2e/hermoso-shield.spec.ts` (after `npm run build`, with `HERMES_E2E_HERMES_ROOT` pointing at a runtime).

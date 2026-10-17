@@ -11,6 +11,7 @@
  *   E2E_SHIELD_PLAIN    one plain sentence (what the shield lets through, or holds back)
  *   E2E_SHIELD_WRITE <path>        write_file(path) → a sentence that says whether the file was written or refused
  *   E2E_SHIELD_WRITE_SLOW <path>   the same, but the model takes a few seconds to decide (time to drop the tunnel)
+ *   E2E_GUARD_WRITE <path>         write_file(path) → a sentence that says whether the guardian let it through
  *
  * Hermes defers a plugin's tools behind `tool_search` / `tool_call` and lists them by name in the `tool_search`
  * description. The mock behaves like a model that reads that list: it calls the tool through `tool_call` (or
@@ -38,6 +39,10 @@ export const SHIELD_WRITE_SLOW = 'E2E_SHIELD_WRITE_SLOW'
 export const SHIELD_PLAIN_DONE = 'The shield let this question through.'
 export const SHIELD_WRITE_DONE = 'The file was written.'
 export const SHIELD_REFUSED_DONE = 'The tool was refused because the VPN was down.'
+export const GUARD_WRITE = 'E2E_GUARD_WRITE'
+export const GUARD_WRITTEN_DONE = 'The guarded file was written.'
+export const GUARD_DENIED_DONE = 'The user said no to the guarded file.'
+export const GUARD_BLOCKED_DONE = 'The guarded file was never allowed.'
 /** What Hermoso's plugin tells the model when it refuses a tool during a freeze. */
 export const FROZEN_WORDS = 'Hermoso froze the agent'
 
@@ -69,7 +74,19 @@ const writing =
           text: context.results.some(result => result.includes(FROZEN_WORDS)) ? SHIELD_REFUSED_DONE : SHIELD_WRITE_DONE
         }
 
+const guarding = (context: Context): Turn =>
+  context.results.length === 0
+    ? { tool: { args: { content: 'guarded', path: after(context.prompt, GUARD_WRITE) }, name: 'write_file' } }
+    : {
+        text: context.results.some(result => result.includes('said no'))
+          ? GUARD_DENIED_DONE
+          : context.results.some(result => result.includes('does not allow'))
+            ? GUARD_BLOCKED_DONE
+            : GUARD_WRITTEN_DONE
+      }
+
 const SCRIPTS: Record<string, (context: Context) => Turn> = {
+  [GUARD_WRITE]: guarding,
   [SHIELD_PLAIN]: () => ({ text: SHIELD_PLAIN_DONE }),
   [SHIELD_WRITE_SLOW]: writing(SHIELD_WRITE_SLOW, SLOW_MS),
   [SHIELD_WRITE]: writing(SHIELD_WRITE, 0),

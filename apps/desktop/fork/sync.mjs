@@ -469,7 +469,9 @@ const FORK_UNIT_TESTS = [
 ]
 
 // The Python half of Hermoso (the agent's plugin); only a fork that has it runs it.
-const PLUGIN_TESTS = path.join(DESKTOP, 'fork', 'plugin-tests', 'test_hermoso_plugin.py')
+const PLUGIN_TESTS = ['test_hermoso_plugin.py', 'test_guardian_rules.py'].map(name =>
+  path.join(DESKTOP, 'fork', 'plugin-tests', name)
+)
 
 function depsChanged(oldBase, target) {
   return (
@@ -822,8 +824,10 @@ function replayAndVerify({ base, options, stack, target }) {
         )
       )
 
-      if (fs.existsSync(PLUGIN_TESTS)) {
-        step('hermoso plugin tests (python)', () => mustSucceed(sh('python', ['-B', PLUGIN_TESTS]), 'fork/plugin-tests'))
+      for (const file of PLUGIN_TESTS.filter(candidate => fs.existsSync(candidate))) {
+        step(`hermoso plugin tests (python): ${path.basename(file)}`, () =>
+          mustSucceed(sh('python', ['-B', file]), 'fork/plugin-tests')
+        )
       }
     }
 

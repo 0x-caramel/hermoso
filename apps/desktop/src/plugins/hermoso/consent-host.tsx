@@ -50,6 +50,14 @@ export function ConsentHost() {
           {prompt.lines.map((line, index) => (
             <p key={index}>{line}</p>
           ))}
+          {prompt.code && (
+            <pre
+              className="max-h-40 overflow-auto rounded-md bg-(--ui-bg-quaternary) p-2 font-mono text-xs break-all whitespace-pre-wrap text-foreground"
+              data-testid="consent-code"
+            >
+              {prompt.code}
+            </pre>
+          )}
         </div>
 
         <DialogFooter>
